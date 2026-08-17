@@ -4,9 +4,20 @@ node_modules/
 dist/
 reports/
 test-results/
-extension builds/
 *.png
 .DS_Store
 .claude/
 .mcp.json
 .playwright-mcp/
+extension builds/.inspect-login-profile/
+extension builds/.inspect-profile/
+extension builds/ztb-test-profile/
+extension builds/screenshots/
+extension builds/chrome-1.4.3/
+extension builds/ext-1.4.3/
+extension builds/extension-unpacked/
+extension builds/extension.crx
+extension builds/firefox-1.4.3/
+extension builds/safari-1.4.3/
+extension builds/current/
+extension builds/**/__MACOSX/
