@@ -1,0 +1,42 @@
+{
+  "name": "zt-extension-policy-regression",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --config=playwright.ui.config.ts",
+    "test:smoke": "npx playwright test tests/01-extension-load-and-login.spec.ts tests/02-dashboard-login.spec.ts",
+    "test:ai-regression": "npx playwright test tests/policy/ai_assisted/",
+    "test:regression": "npm run test:smoke && npm run test:ai-regression",
+    "download-extension": "tsx scripts/download-extension.ts",
+    "download-extension:force": "tsx scripts/download-extension.ts --force",
+    "load-profile": "tsx scripts/load-profile.ts",
+    "ui": "tsx ui/server.ts",
+    "inspect-login": "tsx scripts/inspect-login.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.2",
+    "@types/unzipper": "^0.10.11",
+    "axios": "^1.19.0",
+    "dotenv": "^17.4.2",
+    "playwright": "^1.62.1",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.5",
+    "typescript": "^7.0.2",
+    "unzipper": "^0.12.5",
+    "zod": "^4.4.3"
+  },
+  "dependencies": {
+    "@playwright/mcp": "^0.0.79",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}

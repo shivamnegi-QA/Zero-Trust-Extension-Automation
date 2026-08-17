@@ -1,0 +1,2340 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZT Extension · Test Runner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Dark theme (default) ──────────────────────────────────────────────── */
+    :root, [data-theme="dark"] {
+      --bg:        #0A0E1A;
+      --bg-2:      #0F1524;
+      --card:      #111827;
+      --card-2:    #16213A;
+      --border:    #1E2A45;
+      --border-2:  #26355A;
+      --accent:    #00D4FF;
+      --accent-2:  #7C3AED;
+      --done:      #22C55E;
+      --wip:       #F59E0B;
+      --danger:    #EF4444;
+      --text:      #FFFFFF;
+      --muted:     #94A3B8;
+      --muted-2:   #8FA0BF;
+
+      --accent-dim:  rgba(0,212,255,0.1);
+      --accent-glow: rgba(0,212,255,0.25);
+      --done-dim:    rgba(34,197,94,0.1);
+      --done-glow:   rgba(34,197,94,0.25);
+      --wip-dim:     rgba(245,158,11,0.1);
+      --wip-glow:    rgba(245,158,11,0.25);
+      --danger-dim:  rgba(239,68,68,0.1);
+      --danger-glow: rgba(239,68,68,0.25);
+
+      --header-bg:  rgba(10,14,26,0.9);
+      --sidebar-bg: var(--bg-2);
+      --controls-bg: rgba(10,14,26,0.6);
+      --tab-bar-bg: rgba(10,14,26,0.7);
+      --footer-bg:  rgba(10,14,26,0.85);
+      --pane-header-bg: rgba(10,14,26,0.5);
+      --log-body-bg: rgba(10,14,26,0.4);
+
+      --blur: blur(14px) saturate(180%);
+    }
+
+    /* ── Light theme ──────────────────────────────────────────────────────── */
+    [data-theme="light"] {
+      --bg:        #F0F4F8;
+      --bg-2:      #E8EDF5;
+      --card:      #FFFFFF;
+      --card-2:    #F7F9FC;
+      --border:    #D1DBE8;
+      --border-2:  #B8CADC;
+      --accent:    #0891B2;
+      --accent-2:  #6D28D9;
+      --done:      #16A34A;
+      --wip:       #D97706;
+      --danger:    #DC2626;
+      --text:      #0F172A;
+      --muted:     #64748B;
+      --muted-2:   #475569;
+
+      --accent-dim:  rgba(8,145,178,0.08);
+      --accent-glow: rgba(8,145,178,0.2);
+      --done-dim:    rgba(22,163,74,0.08);
+      --done-glow:   rgba(22,163,74,0.2);
+      --wip-dim:     rgba(217,119,6,0.08);
+      --wip-glow:    rgba(217,119,6,0.2);
+      --danger-dim:  rgba(220,38,38,0.08);
+      --danger-glow: rgba(220,38,38,0.2);
+
+      --header-bg:  rgba(240,244,248,0.95);
+      --sidebar-bg: #E8EDF5;
+      --controls-bg: rgba(240,244,248,0.9);
+      --tab-bar-bg: rgba(240,244,248,0.95);
+      --footer-bg:  rgba(240,244,248,0.95);
+      --pane-header-bg: rgba(248,250,252,0.9);
+      --log-body-bg: rgba(248,250,252,0.7);
+
+      --blur: blur(14px) saturate(150%);
+    }
+
+    --font:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --radius-sm: 8px;
+    --radius:    12px;
+
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    [data-theme="dark"] body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(circle at 20% 30%, rgba(0,212,255,0.06) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(124,58,237,0.05) 0%, transparent 45%);
+      pointer-events: none; z-index: 0;
+    }
+
+    @keyframes logo-pulse {
+      0%, 100% { transform: scale(1);   opacity: 1; }
+      50%       { transform: scale(1.2); opacity: 0.6; }
+    }
+    @keyframes dot-pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--wip-glow); }
+      50%       { opacity: 0.65; box-shadow: 0 0 0 4px transparent; }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes row-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes suite-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    header {
+      position: relative; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; height: 52px;
+      background: var(--header-bg);
+      backdrop-filter: var(--blur);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }
+    .logo-icon {
+      width: 26px; height: 26px;
+      background: linear-gradient(135deg, rgba(0,212,255,0.25), rgba(124,58,237,0.2));
+      border: 1px solid rgba(0,212,255,0.35);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 10px rgba(0,212,255,0.2);
+      animation: logo-pulse 1.8s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    [data-theme="light"] .logo-icon {
+      background: linear-gradient(135deg, rgba(8,145,178,0.15), rgba(109,40,217,0.12));
+      border-color: rgba(8,145,178,0.4);
+      box-shadow: 0 0 10px rgba(8,145,178,0.15);
+    }
+    .logo-text { display: flex; flex-direction: column; gap: 1px; }
+    .logo-title { font-size: 13px; font-weight: 700; }
+    .logo-sub   { font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+
+    /* sidebar toggle button in header */
+    .sidebar-toggle {
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 7px;
+      border: 1px solid var(--border); background: transparent;
+      cursor: pointer; color: var(--muted); flex-shrink: 0;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .sidebar-toggle:hover { background: var(--accent-dim); color: var(--accent); border-color: rgba(0,212,255,0.3); }
+
+    .header-right { display: flex; align-items: center; gap: 10px; }
+
+    /* light/dark toggle */
+    .theme-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 7px;
+      border: 1px solid var(--border); background: transparent;
+      cursor: pointer; color: var(--muted); flex-shrink: 0;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .theme-btn:hover { background: var(--accent-dim); color: var(--accent); border-color: rgba(0,212,255,0.3); }
+
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 5px 13px 5px 10px; border-radius: 999px;
+      background: var(--card); border: 1px solid var(--border);
+      font-size: 12px; font-weight: 500; color: var(--muted);
+      transition: all .25s;
+    }
+    .status-pill.running { background: var(--accent-dim); border-color: rgba(0,212,255,0.3); color: var(--accent); }
+    .status-pill.passed  { background: var(--done-dim);   border-color: rgba(34,197,94,0.3);  color: var(--done); }
+    .status-pill.failed  { background: var(--danger-dim); border-color: rgba(239,68,68,0.3);  color: var(--danger); }
+    [data-theme="light"] .status-pill.running { color: var(--accent); }
+
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+      flex-shrink: 0; transition: background .25s;
+    }
+    .status-dot.running { background: var(--accent); animation: dot-pulse 1.4s ease-in-out infinite; }
+    .status-dot.passed  { background: var(--done);   box-shadow: 0 0 6px var(--done-glow); }
+    .status-dot.failed  { background: var(--danger);  box-shadow: 0 0 6px var(--danger-glow); }
+
+    /* ── Layout ──────────────────────────────────────────────────────────────── */
+    .layout {
+      display: flex; flex: 1; min-height: 0; overflow: hidden;
+      position: relative; z-index: 1;
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────────────────────────── */
+    aside {
+      width: 268px; flex-shrink: 0; min-width: 180px; max-width: 480px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden;
+      transition: width .22s ease, opacity .22s ease;
+      position: relative;
+    }
+    aside.collapsed { width: 0 !important; opacity: 0; pointer-events: none; min-width: 0 !important; }
+
+    /* sidebar drag-resize handle */
+    .sidebar-resizer {
+      position: absolute; top: 0; right: -3px; width: 6px; height: 100%;
+      cursor: ew-resize; z-index: 20;
+    }
+    .sidebar-resizer:hover, .sidebar-resizer.dragging { background: rgba(0,212,255,0.35); }
+
+    /* ── Sidebar header band ── */
+    .sidebar-head {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--pane-header-bg);
+      backdrop-filter: var(--blur);
+      flex-shrink: 0;
+    }
+    .sidebar-head-row {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+    }
+    .sidebar-title {
+      font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 3px; color: var(--muted);
+      display: flex; align-items: center; gap: 7px;
+    }
+    .sidebar-title-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 0 6px var(--accent-glow);
+      flex-shrink: 0;
+    }
+
+    /* search input */
+    .filter-wrap { position: relative; }
+    .filter-wrap .icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--muted); pointer-events: none; display: flex; transition: color .15s;
+    }
+    .filter-wrap:focus-within .icon { color: var(--accent); }
+    #grep-input {
+      width: 100%;
+      background: linear-gradient(160deg, var(--card), var(--card-2));
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--text); font-family: 'Inter', sans-serif; font-size: 12px;
+      padding: 8px 10px 8px 32px; outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    #grep-input:focus {
+      border-color: rgba(0,212,255,0.45);
+      box-shadow: 0 0 0 3px rgba(0,212,255,0.08);
+    }
+    #grep-input::placeholder { color: var(--muted); }
+
+    /* ── Suite list section ── */
+    .sidebar-list-section {
+      flex: 1; overflow-y: auto;
+      padding: 10px 10px 6px;
+    }
+    .sidebar-list-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 6px 8px;
+    }
+    .section-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 2.5px; color: var(--muted);
+    }
+
+    .test-list { display: flex; flex-direction: column; gap: 2px; }
+    .test-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer;
+      transition: background .12s, border-color .12s, box-shadow .12s;
+      user-select: none; border: 1px solid transparent;
+      position: relative;
+    }
+    .test-item::before {
+      content: ''; position: absolute; left: 0; top: 20%; bottom: 20%;
+      width: 2px; border-radius: 2px;
+      background: var(--accent); opacity: 0;
+      transition: opacity .15s;
+    }
+    .test-item:hover {
+      background: linear-gradient(160deg, var(--card), var(--card-2));
+      border-color: var(--border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .test-item.selected {
+      background: linear-gradient(160deg, var(--card), var(--card-2));
+      border-color: rgba(0,212,255,0.2);
+      box-shadow: 0 2px 10px rgba(0,212,255,0.06);
+    }
+    .test-item.selected::before { opacity: 1; }
+
+    .test-item input[type=checkbox] {
+      appearance: none; -webkit-appearance: none;
+      width: 15px; height: 15px; border: 1.5px solid var(--border-2);
+      border-radius: 4px; cursor: pointer; flex-shrink: 0;
+      background: transparent; transition: all .12s; position: relative;
+    }
+    .test-item input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+    .test-item input[type=checkbox]:checked::after {
+      content: ''; position: absolute; left: 4px; top: 2px;
+      width: 5px; height: 8px; border: 1.5px solid #000;
+      border-top: none; border-left: none; transform: rotate(42deg);
+    }
+
+    .test-item-icon {
+      width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, var(--accent-dim), rgba(124,58,237,0.08));
+      border: 1px solid rgba(0,212,255,0.15);
+      color: var(--accent);
+      transition: background .12s, border-color .12s;
+    }
+    .test-item.selected .test-item-icon {
+      background: linear-gradient(135deg, rgba(0,212,255,0.18), rgba(124,58,237,0.12));
+      border-color: rgba(0,212,255,0.3);
+    }
+
+    .test-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .test-name {
+      font-size: 12px; font-weight: 600;
+      color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      transition: color .12s;
+    }
+    .test-item-sub {
+      font-size: 10px; font-family: 'JetBrains Mono', monospace;
+      color: var(--border-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .test-item.selected .test-name { color: var(--text); }
+    .test-item.selected .test-item-sub { color: var(--muted); }
+
+    /* Sidebar group: a logical test group that may span multiple spec files */
+    .test-group { display: flex; flex-direction: column; gap: 2px; }
+    .test-group-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: var(--radius-sm);
+      cursor: pointer; user-select: none;
+      border: 1px solid transparent;
+      background: linear-gradient(160deg, var(--card), var(--card-2));
+      border-color: var(--border);
+      transition: border-color .12s;
+    }
+    .test-group-header:hover { border-color: rgba(0,212,255,0.25); }
+    .test-group-header input[type=checkbox] {
+      appearance: none; -webkit-appearance: none;
+      width: 15px; height: 15px; border: 1.5px solid var(--border-2);
+      border-radius: 4px; cursor: pointer; flex-shrink: 0;
+      background: transparent; transition: all .12s; position: relative;
+    }
+    .test-group-header input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+    .test-group-header input[type=checkbox]:checked::after {
+      content: ''; position: absolute; left: 4px; top: 2px;
+      width: 5px; height: 8px; border: 1.5px solid #000;
+      border-top: none; border-left: none; transform: rotate(42deg);
+    }
+    .test-group-icon {
+      width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, var(--accent-dim), rgba(124,58,237,0.08));
+      border: 1px solid rgba(0,212,255,0.15);
+      color: var(--accent);
+    }
+    .test-group-label { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .test-group-browsers { display: flex; gap: 3px; flex-shrink: 0; }
+    .test-group-browser-badge {
+      font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+      padding: 1px 5px; border-radius: 3px;
+      background: rgba(255,255,255,0.04); color: var(--muted); border: 1px solid var(--border);
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .test-group-browser-badge.active { background: rgba(0,212,255,0.12); color: var(--accent); border-color: rgba(0,212,255,0.3); }
+
+    .empty-state {
+      color: var(--muted); font-size: 12px; text-align: center;
+      padding: 32px 16px; line-height: 1.8;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .empty-state-icon { opacity: 0.3; }
+    .empty-state code {
+      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      background: rgba(255,255,255,0.05); padding: 2px 6px;
+      border-radius: 4px; color: var(--muted-2);
+    }
+
+    /* ── Sidebar footer ── */
+    .sidebar-footer {
+      padding: 9px 14px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+      background: var(--pane-header-bg);
+    }
+    .sel-count {
+      font-size: 11px; color: var(--muted); font-weight: 500;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .sel-count-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; padding: 0 5px;
+      border-radius: 999px; font-size: 10px; font-weight: 700;
+      background: var(--accent-dim); border: 1px solid rgba(0,212,255,0.2);
+      color: var(--accent);
+    }
+    .sidebar-collapse-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: 6px;
+      border: 1px solid var(--border); background: transparent;
+      cursor: pointer; color: var(--muted); flex-shrink: 0;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .sidebar-collapse-btn:hover { background: var(--accent-dim); color: var(--accent); border-color: rgba(0,212,255,0.3); }
+
+    /* ── Main ────────────────────────────────────────────────────────────────── */
+    main {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+    }
+
+    /* Controls bar */
+    .controls {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 16px; border-bottom: 1px solid var(--border);
+      background: var(--controls-bg); backdrop-filter: var(--blur);
+      flex-shrink: 0;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 17px; border-radius: 999px;
+      border: 1px solid transparent; font-family: 'Inter', sans-serif;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      transition: all .15s; white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #0A0E1A; box-shadow: 0 0 14px var(--accent-glow);
+    }
+    .btn-primary:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,212,255,0.35); }
+    .btn-danger {
+      background: var(--danger-dim); border-color: rgba(239,68,68,0.25); color: var(--danger);
+    }
+    .btn-danger:not(:disabled):hover {
+      background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.4);
+      box-shadow: 0 0 14px var(--danger-glow); transform: translateY(-2px);
+    }
+    .btn-ghost {
+      background: transparent; border-color: var(--border); color: var(--muted);
+    }
+    .btn-ghost:not(:disabled):hover { background: rgba(255,255,255,0.04); border-color: var(--border-2); color: var(--text); }
+    .btn-sm { padding: 4px 12px; font-size: 11px; }
+
+    .controls-divider { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
+    .controls-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+    /* ── Browser selector pills ─────────────────────────────────────────────── */
+    .browser-selector {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .browser-selector-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 2px; color: var(--muted); white-space: nowrap;
+    }
+    .browser-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 11px 4px 9px; border-radius: 999px;
+      border: 1px solid var(--border); background: transparent;
+      font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+      cursor: pointer; color: var(--muted); user-select: none;
+      transition: background .12s, border-color .12s, color .12s, box-shadow .12s;
+      white-space: nowrap;
+    }
+    .browser-pill:hover {
+      background: rgba(255,255,255,0.04); border-color: var(--border-2); color: var(--text);
+    }
+    .browser-pill input[type=checkbox] {
+      appearance: none; -webkit-appearance: none;
+      width: 13px; height: 13px; border: 1.5px solid var(--border-2);
+      border-radius: 3px; cursor: pointer; flex-shrink: 0;
+      background: transparent; transition: all .12s; position: relative;
+      margin: 0;
+    }
+    .browser-pill input[type=checkbox]:checked {
+      background: var(--accent); border-color: var(--accent);
+    }
+    .browser-pill input[type=checkbox]:checked::after {
+      content: ''; position: absolute; left: 3px; top: 1px;
+      width: 5px; height: 7px;
+      border: 1.5px solid #000; border-top: none; border-left: none;
+      transform: rotate(42deg);
+    }
+    .browser-pill.checked {
+      background: var(--accent-dim); border-color: rgba(0,212,255,0.35);
+      color: var(--accent); box-shadow: 0 0 8px var(--accent-glow);
+    }
+    .browser-pill.checked input[type=checkbox] { border-color: var(--accent); }
+    .browser-pill-icon { display: flex; align-items: center; flex-shrink: 0; }
+
+    /* ── Tab bar ─────────────────────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex; align-items: stretch; gap: 0;
+      padding: 0 16px;
+      background: var(--tab-bar-bg); backdrop-filter: var(--blur);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0; height: 40px;
+    }
+    .tab-btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 0 16px; border: none; border-bottom: 2px solid transparent;
+      background: transparent; color: var(--muted);
+      font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+      cursor: pointer; user-select: none; white-space: nowrap;
+      transition: color .15s, border-color .15s;
+      position: relative;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-badge {
+      font-size: 10px; font-weight: 700;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+      padding: 1px 7px; border-radius: 999px; color: var(--muted);
+    }
+    .tab-btn.active .tab-badge { background: var(--accent-dim); border-color: rgba(0,212,255,0.3); color: var(--accent); }
+    [data-theme="light"] .tab-badge { background: rgba(0,0,0,0.05); }
+
+    /* ── Tab panes ───────────────────────────────────────────────────────────── */
+    .tab-pane { display: none; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+    .tab-pane.active { display: flex; }
+
+    /* ── Output tab ─────────────────────────────────────────────────────────── */
+    #tab-output {
+      display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0;
+    }
+    #tab-output.active { display: flex; }
+
+    .pane-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 12px 7px 16px; background: var(--pane-header-bg);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .pane-header-left { display: flex; align-items: center; gap: 10px; }
+    .pane-header-right { display: flex; align-items: center; gap: 6px; }
+    .pane-title {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 3px; color: var(--muted);
+    }
+    .pane-badge {
+      font-size: 10px; color: var(--muted);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      padding: 1px 8px; border-radius: 999px;
+    }
+    .toggle-label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--muted); cursor: pointer; user-select: none; font-weight: 500;
+    }
+    .toggle-label input[type=checkbox] {
+      appearance: none; -webkit-appearance: none;
+      width: 30px; height: 17px; background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border); border-radius: 999px;
+      cursor: pointer; position: relative; transition: background .15s, border-color .15s;
+    }
+    .toggle-label input[type=checkbox]::after {
+      content: ''; position: absolute; left: 3px; top: 3px;
+      width: 9px; height: 9px; background: var(--muted);
+      border-radius: 50%; transition: transform .15s, background .15s;
+    }
+    .toggle-label input[type=checkbox]:checked {
+      background: rgba(0,212,255,0.15); border-color: rgba(0,212,255,0.4);
+    }
+    .toggle-label input[type=checkbox]:checked::after { transform: translateX(13px); background: var(--accent); }
+
+    #autoscroll-indicator {
+      font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 4px;
+      transition: background .15s, color .15s;
+    }
+    #autoscroll-indicator.autoscroll-on {
+      color: var(--accent); background: rgba(0,212,255,0.1);
+    }
+    #autoscroll-indicator.autoscroll-off {
+      color: var(--muted); background: rgba(255,255,255,0.04);
+    }
+
+    #output-body {
+      flex: 1; overflow-y: auto; padding: 10px 16px 14px;
+    }
+
+    .output-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--muted); font-size: 12px; gap: 8px;
+    }
+    #output-summary {
+      font-size: 11px; color: var(--muted); padding: 4px 0 10px;
+      font-weight: 500; letter-spacing: 0.3px;
+    }
+
+    .output-row {
+      display: flex; flex-direction: column;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      background: linear-gradient(160deg, var(--card) 0%, var(--card-2) 100%);
+      margin-bottom: 5px;
+      animation: row-in .2s ease both;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .output-row:hover { border-color: rgba(0,212,255,0.2); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+
+    .row-top {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 12px; cursor: pointer; user-select: none;
+    }
+
+    .row-log-body {
+      display: none;
+      padding: 8px 14px 10px 46px;
+      border-top: 1px solid var(--border);
+      background: var(--log-body-bg);
+      border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.75;
+    }
+    .output-row.open .row-log-body { display: block; }
+    .output-row.fail-row .row-log-body { display: block; }
+
+    .row-chevron {
+      color: var(--muted); flex-shrink: 0; transition: transform .2s; display: flex; align-items: center;
+    }
+    .output-row.open .row-chevron,
+    .output-row.fail-row .row-chevron { transform: rotate(90deg); color: var(--accent); }
+
+    .row-icon {
+      width: 22px; height: 22px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .row-icon svg { display: block; }
+    .row-icon.pass    { background: var(--done-dim);   color: var(--done);   border: 1px solid rgba(34,197,94,0.25); }
+    .row-icon.fail    { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.25); }
+    .row-icon.skip    { background: var(--wip-dim);    color: var(--wip);    border: 1px solid rgba(245,158,11,0.25); }
+    .row-icon.running { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,212,255,0.25); }
+    .row-icon.pending { background: rgba(255,255,255,0.03); color: var(--muted); border: 1px solid var(--border); }
+
+    .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .row-name { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-suite { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .row-duration { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+    .row-link {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+      color: var(--accent); text-decoration: none;
+      padding: 3px 9px; border-radius: 999px;
+      background: var(--accent-dim); border: 1px solid rgba(0,212,255,0.25);
+      transition: background .12s, box-shadow .12s; white-space: nowrap;
+    }
+    .row-link:hover { background: rgba(0,212,255,0.18); box-shadow: 0 0 8px var(--accent-glow); }
+
+    /* Screenshot link inside failed log group */
+    .screenshot-link {
+      display: inline-flex; align-items: center; gap: 5px;
+      margin-top: 8px; padding: 5px 10px;
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 6px; background: var(--danger-dim);
+      font-size: 11px; font-weight: 600; color: var(--danger);
+      text-decoration: none; letter-spacing: 0.3px; font-family: 'Inter', sans-serif;
+      transition: background .12s, border-color .12s;
+    }
+    .screenshot-link:hover { background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.5); }
+
+    /* ── Result bar (below output) ───────────────────────────────────────────── */
+    #result-bar {
+      display: none; align-items: stretch; flex-shrink: 0;
+      border-top: 1px solid var(--border);
+      position: sticky; bottom: 0; z-index: 5;
+    }
+    #result-bar.visible { display: flex; }
+
+    .result-card {
+      flex: 1; display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; position: relative;
+      background: linear-gradient(160deg, var(--card), var(--card-2));
+    }
+    .result-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    }
+    .result-card + .result-card { border-left: 1px solid var(--border); }
+    .pass-card::before { background: linear-gradient(90deg, var(--done), rgba(34,197,94,0.3)); }
+    .fail-card::before { background: linear-gradient(90deg, var(--danger), rgba(239,68,68,0.3)); }
+    .time-card { flex: none; padding: 10px 18px; }
+    .time-card::before { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .skip-result-card::before { background: linear-gradient(90deg, var(--wip), rgba(245,158,11,0.3)); }
+
+    .result-icon {
+      width: 26px; height: 26px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center; font-size: 12px;
+    }
+    .pass-card .result-icon { background: var(--done-dim); color: var(--done); border: 1px solid rgba(34,197,94,0.25); }
+    .fail-card .result-icon { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.25); }
+
+    .result-info { display: flex; flex-direction: column; gap: 1px; }
+    .result-num { font-size: 18px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+    .pass-card .result-num { background: linear-gradient(135deg, var(--done), #4ade80); -webkit-background-clip: text; color: transparent; }
+    .fail-card .result-num { background: linear-gradient(135deg, var(--danger), #f87171); -webkit-background-clip: text; color: transparent; }
+    .result-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); font-weight: 600; }
+    .result-time-val { font-size: 14px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+    .result-time-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; font-weight: 600; }
+
+
+    .log-group {
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .log-group:target { border-color: rgba(0,212,255,0.4); box-shadow: 0 0 0 2px rgba(0,212,255,0.1); }
+
+    .log-group-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px; cursor: pointer; user-select: none;
+      background: linear-gradient(160deg, var(--card), var(--card-2));
+      border-radius: var(--radius) var(--radius) 0 0;
+      transition: background .12s;
+    }
+    .log-group:not(.open) .log-group-header { border-radius: var(--radius); }
+    .log-group-header:hover { background: linear-gradient(160deg, var(--card-2), var(--bg-2)); }
+
+    .log-group-badge {
+      width: 18px; height: 18px; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .log-group-badge svg { display: block; }
+    .log-group-badge.pass    { background: var(--done-dim);   color: var(--done);   border: 1px solid rgba(34,197,94,0.25); }
+    .log-group-badge.fail    { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.25); }
+    .log-group-badge.skip    { background: var(--wip-dim);    color: var(--wip);    border: 1px solid rgba(245,158,11,0.25); }
+    .log-group-badge.running { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,212,255,0.25); }
+    .log-group-badge.meta    { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+    .log-group-badge.pending { background: rgba(255,255,255,0.03); color: var(--muted); border: 1px solid var(--border); }
+
+    .log-group-name { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-group-name.muted { color: var(--muted); font-weight: 500; font-size: 11px; }
+    .log-group-duration { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+    .log-group-chevron { color: var(--muted); flex-shrink: 0; transition: transform .2s; display: flex; align-items: center; }
+    .log-group.open .log-group-chevron { transform: rotate(90deg); }
+
+    .log-group-body {
+      display: none; padding: 10px 14px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--log-body-bg);
+      border-radius: 0 0 var(--radius) var(--radius);
+      font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.75;
+    }
+    .log-group.open .log-group-body { display: block; }
+    .log-group.fail-group.open .log-group-body { display: block; }
+
+    .log-line { display: block; }
+    .log-line.pass    { color: var(--done); }
+    .log-line.fail    { color: var(--danger); font-weight: 500; }
+    .log-line.skip    { color: var(--wip); }
+    .log-line.warn    { color: var(--wip); }
+    .log-line.info    { color: var(--accent); }
+    .log-line.muted   { color: var(--muted); }
+    .log-line.detail  { color: var(--muted-2); padding-left: 2em; font-size: 11px; }
+    .log-line.sep     { color: var(--border-2); }
+
+    /* Step rows — fixture setup lines and console.log output */
+    .log-step {
+      display: flex; align-items: baseline; gap: 6px;
+      margin: 2px 0; font-size: 11.5px;
+    }
+    .log-step-icon {
+      flex-shrink: 0; width: 14px; text-align: center; font-size: 10px;
+    }
+    .log-step.step-fixture .log-step-icon { color: var(--muted); }
+    .log-step.step-fixture .log-step-text { color: var(--muted); font-style: italic; }
+    .log-step.step-info .log-step-icon    { color: var(--accent); }
+    .log-step.step-info .log-step-text    { color: var(--text); }
+    .log-step.step-pass .log-step-icon    { color: var(--done); }
+    .log-step.step-pass .log-step-text    { color: var(--done); }
+    .log-step.step-fail .log-step-icon    { color: var(--danger); }
+    .log-step.step-fail .log-step-text    { color: var(--danger); font-weight: 500; }
+    .log-step.step-warn .log-step-icon    { color: var(--wip); }
+    .log-step.step-warn .log-step-text    { color: var(--wip); }
+
+    .log-line.stderr  {
+      color: #fb923c; background: rgba(251,146,60,0.04);
+      border-left: 2px solid rgba(251,146,60,0.3);
+      padding-left: 8px; margin-left: -10px;
+    }
+
+    /* ── Suite overview (pre-run catalogue in Output tab) ───────────────────── */
+    #suite-overview { padding-bottom: 4px; }
+    #suite-overview:empty { display: none; }
+
+    /* ── Suite blocks (used in #suite-overview inside Output tab) ───────────── */
+    .suite-block {
+      margin-bottom: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      animation: suite-in .2s ease both;
+    }
+    .suite-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; cursor: pointer; user-select: none;
+      background: linear-gradient(160deg, var(--card), var(--card-2));
+      border-radius: var(--radius) var(--radius) 0 0;
+      transition: background .12s;
+    }
+    .suite-header:hover { background: linear-gradient(160deg, var(--card-2), var(--bg-2)); }
+    .suite-block:not(.open) .suite-header { border-radius: var(--radius); }
+
+    .suite-chevron {
+      color: var(--muted); flex-shrink: 0; transition: transform .2s; display: flex; align-items: center;
+    }
+    .suite-block.open .suite-chevron { transform: rotate(90deg); }
+
+    .suite-name { font-size: 12.5px; font-weight: 700; color: var(--text); flex: 1; }
+    .suite-counts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .suite-count-pill {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+    }
+    .suite-count-pill.pass { background: var(--done-dim); color: var(--done); border: 1px solid rgba(34,197,94,0.25); }
+    .suite-count-pill.fail { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.25); }
+    .suite-count-pill.skip { background: var(--wip-dim); color: var(--wip); border: 1px solid rgba(245,158,11,0.25); }
+    .suite-count-pill.total { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+
+    .suite-body { display: none; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; }
+    .suite-block.open .suite-body { display: block; }
+
+    .suite-test-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--log-body-bg);
+      transition: background .1s;
+    }
+    .suite-test-row:last-child { border-bottom: none; }
+    .suite-test-row:hover { background: linear-gradient(160deg, var(--card), var(--card-2)); }
+
+    .suite-test-icon {
+      width: 18px; height: 18px; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .suite-test-icon.pass    { background: var(--done-dim);   color: var(--done);   border: 1px solid rgba(34,197,94,0.2); }
+    .suite-test-icon.fail    { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.2); }
+    .suite-test-icon.skip    { background: var(--wip-dim);    color: var(--wip);    border: 1px solid rgba(245,158,11,0.2); }
+    .suite-test-icon.running { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,212,255,0.2); }
+    .suite-test-icon.pending { background: rgba(255,255,255,0.03); color: var(--muted); border: 1px solid var(--border); }
+
+    .suite-test-name { font-size: 12px; font-weight: 500; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .suite-test-id   { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; min-width: 28px; text-align: right; }
+    .suite-test-dur  { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; min-width: 44px; text-align: right; }
+    .suite-test-run  { flex-shrink:0; opacity:0; pointer-events:none; transition:opacity .15s;
+                       display:flex;align-items:center;justify-content:center;
+                       width:22px;height:22px;border-radius:5px;border:1px solid var(--border);
+                       background:transparent;cursor:pointer;color:var(--accent);margin-left:4px; }
+    .suite-test-row:hover .suite-test-run { opacity:1; pointer-events:auto; }
+    .suite-test-run:hover { background:var(--accent-dim); border-color:var(--accent); }
+
+    /* ── Run button on output-row (hover-reveal) ────────────────────────────── */
+    .output-row-run {
+      flex-shrink: 0; opacity: 0; pointer-events: none;
+      display: flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 5px;
+      border: 1px solid var(--border); background: transparent;
+      cursor: pointer; color: var(--accent);
+      transition: opacity .15s, background .12s, border-color .12s;
+    }
+    .output-row:hover .output-row-run { opacity: 1; pointer-events: auto; }
+    .output-row-run:hover { background: var(--accent-dim); border-color: var(--accent); }
+
+    /* ── Checkboxes on suite-test-rows for multi-select ─────────────────────── */
+    .suite-test-cb {
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; flex-shrink: 0;
+      border: 1.5px solid var(--border-2); border-radius: 4px;
+      cursor: pointer; background: rgba(255,255,255,0.03);
+      position: relative; opacity: 0; pointer-events: none;
+      transition: opacity .15s, background .12s, border-color .12s;
+    }
+    .suite-test-row:hover .suite-test-cb,
+    .suite-test-cb:checked { opacity: 1; pointer-events: auto; }
+    .suite-test-cb:checked { background: var(--accent); border-color: var(--accent); }
+    .suite-test-cb:checked::after {
+      content: ''; position: absolute; left: 3px; top: 1px;
+      width: 5px; height: 8px;
+      border: 1.5px solid #000; border-top: none; border-left: none;
+      transform: rotate(42deg);
+    }
+
+    .suite-test-detail {
+      display: none; padding: 8px 14px 10px 42px;
+      background: var(--log-body-bg); border-top: 1px solid var(--border);
+    }
+    .suite-test-row.open + .suite-test-detail { display: block; }
+    .suite-test-desc  { font-size: 11.5px; color: var(--muted-2); line-height: 1.6; margin-bottom: 6px; }
+    .suite-test-validation {
+      display: flex; align-items: flex-start; gap: 6px;
+      font-size: 11px; color: var(--muted); line-height: 1.55;
+    }
+    .suite-test-validation .v-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--accent); flex-shrink: 0; margin-top: 1px;
+    }
+
+    /* total-tests banner above suites */
+    .tests-total-banner {
+      padding: 8px 16px; background: var(--pane-header-bg);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .tests-total-banner .tt-num { font-size: 22px; font-weight: 900; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .tests-total-banner .tt-lbl { font-size: 11px; color: var(--muted); font-weight: 500; }
+
+    .tests-empty {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; color: var(--muted); font-size: 12px; gap: 8px; text-align: center;
+    }
+
+    /* ── Tooltip ─────────────────────────────────────────────────────────────── */
+    #global-tooltip {
+      position: fixed; z-index: 99999;
+      background: rgba(15,21,36,0.96); color: #e2e8f0;
+      font-size: 11px; font-weight: 500; white-space: nowrap;
+      padding: 4px 9px; border-radius: 6px;
+      border: 1px solid var(--border-2);
+      pointer-events: none; opacity: 0; transition: opacity .12s;
+    }
+    #global-tooltip.visible { opacity: 1; }
+    [data-theme="light"] #global-tooltip { background: rgba(15,23,42,0.92); }
+
+    /* ── Scrollbars ──────────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+    [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
+    .spin {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid rgba(10,14,26,0.3); border-top-color: #0A0E1A;
+      border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    [data-theme="light"] .spin { border-color: rgba(240,244,248,0.4); border-top-color: var(--bg); }
+
+    /* ── Toast ───────────────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 54px; right: 20px;
+      padding: 10px 18px; border-radius: var(--radius);
+      background: linear-gradient(135deg, rgba(17,24,39,0.96), rgba(22,33,58,0.96));
+      backdrop-filter: var(--blur); border: 1px solid var(--border-2);
+      color: var(--text); font-size: 12px; font-weight: 600; z-index: 100;
+      transform: translateY(20px); opacity: 0;
+      transition: all .25s cubic-bezier(.34,1.56,.64,1);
+      pointer-events: none;
+    }
+    [data-theme="light"] #toast {
+      background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98));
+      color: var(--text);
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.success { border-color: rgba(34,197,94,0.35); color: var(--done); }
+    #toast.error   { border-color: rgba(239,68,68,0.35); color: var(--danger); }
+
+    /* ── Footer status bar ───────────────────────────────────────────────────── */
+    footer {
+      height: 28px; flex-shrink: 0;
+      background: var(--footer-bg); backdrop-filter: var(--blur);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 16px; gap: 16px;
+      position: sticky; bottom: 0; z-index: 10;
+    }
+    .footer-stat {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; color: var(--muted); font-weight: 500;
+    }
+    .footer-stat .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+    }
+    .footer-stat.pass-stat .dot { background: var(--done); }
+    .footer-stat.fail-stat .dot { background: var(--danger); }
+    .footer-stat.skip-stat .dot { background: var(--wip); }
+    .footer-stat.time-stat { margin-left: auto; }
+    .footer-divider { width: 1px; height: 14px; background: var(--border); }
+    .footer-label { font-size: 11px; color: var(--border-2); }
+
+    @media (max-width: 900px) {
+      aside { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<!-- Header -->
+<header>
+  <div class="header-left">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <span class="logo-title">ZT Extension</span>
+        <span class="logo-sub">Test Runner</span>
+      </div>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="theme-btn" id="theme-btn" title="Toggle light/dark mode" onclick="toggleTheme()">
+      <svg id="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+        <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+      <svg id="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+    </button>
+    <div class="status-pill" id="status-pill">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-label">Idle</span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-resizer" id="sidebar-resizer"></div>
+
+    <!-- Header: title + search -->
+    <div class="sidebar-head">
+      <div class="sidebar-head-row">
+        <div class="sidebar-title">
+          <div class="sidebar-title-dot"></div>
+          Test Suites
+        </div>
+        <button class="sidebar-collapse-btn" onclick="toggleSidebar()" data-tip="Collapse sidebar">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+      </div>
+      <div class="filter-wrap">
+        <span class="icon">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </span>
+        <input id="grep-input" type="text" placeholder="Search tests…" />
+      </div>
+    </div>
+
+    <!-- Test group list -->
+    <div class="sidebar-list-section">
+      <div class="sidebar-list-header">
+        <span class="section-label">Test Groups</span>
+        <button class="btn btn-ghost btn-sm" onclick="toggleAll()">Toggle all</button>
+      </div>
+      <div class="test-list" id="test-list">
+        <div class="empty-state">
+          <svg class="empty-state-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+          No spec files found.<br/>Add <code>.spec.ts</code> files to <code>tests/</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="sidebar-footer">
+      <span class="sel-count" id="sel-summary">
+        <span class="sel-count-badge" id="sel-count-badge">0</span>
+        selected
+      </span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <!-- Controls -->
+    <div class="controls">
+      <button class="sidebar-toggle" id="sidebar-open-btn" title="Open sidebar" onclick="toggleSidebar()" style="display:none;margin-right:4px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+        </svg>
+      </button>
+      <button class="btn btn-primary" id="run-btn" onclick="startRun()">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+        Run Tests
+      </button>
+      <button class="btn btn-danger" id="stop-btn" onclick="stopRun()" disabled>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        Stop
+      </button>
+      <div class="controls-divider"></div>
+      <!-- Browser selector -->
+      <div class="browser-selector">
+        <span class="browser-selector-label">Browsers</span>
+        <label class="browser-pill checked" id="pill-chrome">
+          <input type="checkbox" id="browser-chrome" checked onchange="onBrowserChange(this,'pill-chrome')" />
+          <span class="browser-pill-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
+          </span>
+          Chrome
+        </label>
+        <label class="browser-pill checked" id="pill-firefox">
+          <input type="checkbox" id="browser-firefox" checked onchange="onBrowserChange(this,'pill-firefox')" />
+          <span class="browser-pill-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 6.22 17.9C16 21 14 21 12 21s-4 0-6.22-1.1A10 10 0 0 1 12 2z"/><path d="M12 7c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5z"/></svg>
+          </span>
+          Firefox
+        </label>
+        <label class="browser-pill checked" id="pill-safari">
+          <input type="checkbox" id="browser-safari" checked onchange="onBrowserChange(this,'pill-safari')" />
+          <span class="browser-pill-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12,2 15.5,8.5 22,12 15.5,15.5 12,22 8.5,15.5 2,12 8.5,8.5"/></svg>
+          </span>
+          Safari
+        </label>
+      </div>
+      <div class="controls-divider"></div>
+      <button class="btn btn-ghost btn-sm" id="run-selected-btn" style="display:none;" onclick="runSelected()">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+        Run selected (<span id="run-selected-count">0</span>)
+      </button>
+      <button class="btn btn-ghost btn-sm" id="select-failed-btn" style="display:none;" onclick="selectAllFailed()" data-tip="Check all failed tests">
+        Select failed
+      </button>
+      <div class="controls-divider" id="selected-divider" style="display:none;"></div>
+      <div class="controls-right">
+        <button class="btn btn-danger btn-sm" id="rerun-failed-btn" style="display:none;" onclick="rerunFailed()" data-tip="Re-run only failed tests">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Re-run failed
+        </button>
+        <div class="controls-divider" id="rerun-divider" style="display:none;"></div>
+        <button class="btn btn-ghost btn-sm" onclick="clearAll()">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+          </svg>
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-btn-output" onclick="switchTab('output')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
+        </svg>
+        Output
+        <span class="tab-badge" id="output-count">0</span>
+      </button>
+
+    </div>
+
+    <!-- Output tab -->
+    <div id="tab-output" class="active">
+      <div class="pane-header">
+        <div class="pane-header-left">
+          <span class="pane-title">Test Results</span>
+        </div>
+        <div class="pane-header-right">
+          <button class="btn btn-ghost btn-sm" onclick="expandAllSuites()">Expand all</button>
+          <button class="btn btn-ghost btn-sm" onclick="collapseAllSuites()">Collapse all</button>
+          <span id="autoscroll-indicator" class="autoscroll-on" data-tip="Scroll to bottom to re-enable">Auto-scroll</span>
+        </div>
+      </div>
+      <div id="output-body">
+        <div class="output-empty" id="output-empty">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Run a test suite to see results here
+        </div>
+        <div id="output-summary" style="display:none;"></div>
+        <div id="suite-overview" style="padding:12px 12px 0;"></div>
+        <div id="output-rows"></div>
+      </div>
+      <div id="result-bar">
+        <div class="result-card pass-card">
+          <div class="result-icon">✓</div>
+          <div class="result-info">
+            <div class="result-num" id="res-pass">—</div>
+            <div class="result-lbl">Passed</div>
+          </div>
+        </div>
+        <div class="result-card fail-card">
+          <div class="result-icon">✗</div>
+          <div class="result-info">
+            <div class="result-num" id="res-fail">—</div>
+            <div class="result-lbl">Failed</div>
+          </div>
+        </div>
+        <div class="result-card skip-result-card" id="res-skip-card" style="display:none;">
+          <div class="result-icon" style="background:var(--wip-dim);color:var(--wip);border:1px solid rgba(245,158,11,0.25);">⊘</div>
+          <div class="result-info">
+            <div class="result-num" id="res-skip" style="background:linear-gradient(135deg,var(--wip),#fcd34d);-webkit-background-clip:text;color:transparent;">—</div>
+            <div class="result-lbl">Skipped</div>
+          </div>
+        </div>
+        <div class="result-card time-card">
+          <div class="result-info" style="align-items:flex-end;">
+            <div class="result-time-val" id="res-time">—</div>
+            <div class="result-time-lbl">Duration</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Footer status bar -->
+<footer>
+  <span class="footer-label">Last run:</span>
+  <div class="footer-stat pass-stat">
+    <div class="dot"></div>
+    <span id="footer-pass">—</span> passed
+  </div>
+  <div class="footer-divider"></div>
+  <div class="footer-stat fail-stat">
+    <div class="dot"></div>
+    <span id="footer-fail">—</span> failed
+  </div>
+  <div class="footer-divider"></div>
+  <div class="footer-stat skip-stat" id="footer-skip-stat" style="display:none;">
+    <div class="dot"></div>
+    <span id="footer-skip">—</span> skipped
+    <div class="footer-divider" style="margin:0 0 0 8px;"></div>
+  </div>
+  <div class="footer-stat time-stat">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span id="footer-duration" title="Total run duration">—</span>
+  </div>
+  <div class="footer-divider"></div>
+  <div class="footer-stat" style="gap:4px;">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.4"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    <span style="color:var(--muted);">Last test:</span>
+    <span id="footer-last-test" style="color:var(--text);font-weight:600;">—</span>
+    <span id="footer-last-dur" style="color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:10px;"></span>
+  </div>
+  <div class="footer-divider"></div>
+  <div class="footer-stat" id="footer-status-text" style="color:var(--muted);">No run yet</div>
+</footer>
+
+<div id="global-tooltip"></div>
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Global tooltip
+// ─────────────────────────────────────────────────────────────────────────────
+(function() {
+  const tip = document.getElementById('global-tooltip');
+  let hideTimer = null;
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-tip]');
+    if (!el) return;
+    clearTimeout(hideTimer);
+    tip.textContent = el.getAttribute('data-tip');
+    tip.classList.add('visible');
+    positionTip(e);
+  });
+  document.addEventListener('mousemove', e => {
+    if (!tip.classList.contains('visible')) return;
+    positionTip(e);
+  });
+  document.addEventListener('mouseout', e => {
+    const el = e.target.closest('[data-tip]');
+    if (!el) return;
+    hideTimer = setTimeout(() => tip.classList.remove('visible'), 80);
+  });
+  function positionTip(e) {
+    const pad = 8;
+    tip.style.left = '0'; tip.style.top = '0';
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let x = e.clientX - tw / 2;
+    let y = e.clientY - th - 10;
+    if (x < pad) x = pad;
+    if (x + tw > window.innerWidth - pad) x = window.innerWidth - pad - tw;
+    if (y < pad) y = e.clientY + 18;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Icons
+// ─────────────────────────────────────────────────────────────────────────────
+const ICON_PASS = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const ICON_FAIL = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+const ICON_SKIP = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15" stroke-width="0"/><path d="M8 12h8M8 8h4M8 16h4" stroke-width="2.5"/></svg>`;
+const ICON_SPIN = `<div class="spin"></div>`;
+const ICON_PENDING = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg>`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let es = null;
+let runStart = null;
+let allFiles = [];
+let selectedFiles = new Set();
+let testMap = new Map();        // key → { suite, name, status, rowEl, groupEl, groupBodyEl, lineCount }
+let suitesMap = new Map();      // suiteName → { blockEl, bodyEl, tests: Map<name, rowEl> }
+let currentTestKey = null;
+let metaGroupEl = null;
+let metaGroupBodyEl = null;
+let metaLineCount = 0;
+let rawLineCount = 0;
+let currentTab = 'output';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test catalogue — loaded from /api/catalogue at startup (parsed from spec files)
+// ─────────────────────────────────────────────────────────────────────────────
+let TEST_CATALOGUE = [];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Browser selector
+// ─────────────────────────────────────────────────────────────────────────────
+function onBrowserChange(cb, pillId) {
+  document.getElementById(pillId).classList.toggle('checked', cb.checked);
+  updateGroupBadges();
+}
+
+function getSelectedBrowsers() {
+  const browsers = [];
+  if (document.getElementById('browser-chrome')?.checked)  browsers.push('chrome');
+  if (document.getElementById('browser-firefox')?.checked) browsers.push('firefox');
+  if (document.getElementById('browser-safari')?.checked)  browsers.push('safari');
+  return browsers;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar toggle
+// ─────────────────────────────────────────────────────────────────────────────
+let sidebarOpen = true;
+function toggleSidebar() {
+  sidebarOpen = !sidebarOpen;
+  document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
+  const openBtn = document.getElementById('sidebar-open-btn');
+  if (openBtn) openBtn.style.display = sidebarOpen ? 'none' : '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar resize
+// ─────────────────────────────────────────────────────────────────────────────
+(function() {
+  const resizer = document.getElementById('sidebar-resizer');
+  const sidebar = document.getElementById('sidebar');
+  if (!resizer || !sidebar) return;
+  let dragging = false, startX = 0, startW = 0;
+  resizer.addEventListener('mousedown', e => {
+    dragging = true; startX = e.clientX; startW = sidebar.getBoundingClientRect().width;
+    resizer.classList.add('dragging'); document.body.style.userSelect = 'none'; document.body.style.cursor = 'ew-resize';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const newW = Math.min(Math.max(startW + (e.clientX - startX), 160), 480);
+    sidebar.style.width = newW + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; resizer.classList.remove('dragging');
+    document.body.style.userSelect = ''; document.body.style.cursor = '';
+  });
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Theme toggle
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  document.getElementById('icon-sun').style.display  = isDark ? 'none' : '';
+  document.getElementById('icon-moon').style.display = isDark ? '' : 'none';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab switching
+// ─────────────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  ['output'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('tab-btn-' + t).classList.toggle('active', t === name);
+  });
+  currentTab = name;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests tab — suite blocks
+// ─────────────────────────────────────────────────────────────────────────────
+function ensureSuiteBlock(suiteName) {
+  if (suitesMap.has(suiteName)) return suitesMap.get(suiteName);
+
+  const catTests = TEST_CATALOGUE.filter(t => t.suite === suiteName);
+  const totalLabel = catTests.length ? `${catTests.length} test${catTests.length !== 1 ? 's' : ''}` : '';
+
+  const block = document.createElement('div');
+  block.className = 'suite-block open';
+  block.dataset.suite = suiteName;
+  block.innerHTML = `
+    <div class="suite-header" onclick="toggleSuiteBlock(this.parentElement)">
+      <div class="suite-chevron">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="suite-name">${escHtml(suiteName)}</div>
+      <div class="suite-counts">
+        ${totalLabel ? `<span class="suite-count-pill total">${totalLabel}</span>` : ''}
+      </div>
+    </div>
+    <div class="suite-body"></div>
+  `;
+  const bodyEl = block.querySelector('.suite-body');
+  const entry = { blockEl: block, bodyEl, countsEl: block.querySelector('.suite-counts'), tests: new Map() };
+  suitesMap.set(suiteName, entry);
+  document.getElementById('suite-overview').appendChild(block);
+  return entry;
+}
+
+function ensureSuiteTestRow(suiteName, testName) {
+  const suite = ensureSuiteBlock(suiteName);
+  if (suite.tests.has(testName)) return suite.tests.get(testName);
+
+  const cat = TEST_CATALOGUE.find(t => t.suite === suiteName && t.name === testName);
+  const idLabel = cat ? `#${cat.id}` : '';
+  const lgId = `lg-${(suiteName + '::' + testName).replace(/[^a-z0-9]/gi, '-')}`;
+
+  const row = document.createElement('div');
+  row.className = 'suite-test-row';
+  row.style.cursor = 'pointer';
+  const catFile = cat ? cat.file : '';
+  row.innerHTML = `
+    <input type="checkbox" class="suite-test-cb" onclick="event.stopPropagation();updateRunSelectedBtn()" />
+    <div class="suite-test-icon pending" data-tip="Pending">${ICON_PENDING}</div>
+    <div class="suite-test-name">${escHtml(cap(testName))}</div>
+    <div class="suite-test-id">${idLabel}</div>
+    <div class="suite-test-dur"></div>
+    <button class="suite-test-run" data-tip="Run this test" onclick="event.stopPropagation();runSingleTest(${JSON.stringify(catFile)},${JSON.stringify(suiteName)},${JSON.stringify(testName)})">
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+    </button>
+  `;
+  row.addEventListener('click', e => {
+    if (e.target.closest('a')) return;
+    row.classList.toggle('open');
+  });
+
+  const detail = document.createElement('div');
+  detail.className = 'suite-test-detail';
+  if (cat && (cat.description || cat.validation)) {
+    detail.innerHTML = `
+      ${cat.description ? `<div class="suite-test-desc">${escHtml(cat.description)}</div>` : ''}
+      ${cat.validation  ? `<div class="suite-test-validation"><span class="v-label">Validates</span><span>${escHtml(cat.validation)}</span></div>` : ''}
+    `;
+  } else {
+    detail.innerHTML = `<div class="suite-test-desc" style="color:var(--muted)">Add <code style="font-family:monospace;font-size:10px">// @desc</code> and <code style="font-family:monospace;font-size:10px">// @validates</code> comments above this test for details.</div>`;
+  }
+
+  suite.bodyEl.appendChild(row);
+  suite.bodyEl.appendChild(detail);
+  suite.tests.set(testName, row);
+  updateSuiteCountPills(suiteName);
+  updateTestsCount();
+  return row;
+}
+
+function updateSuiteTestRow(suiteName, testName, status, duration) {
+  const suite = suitesMap.get(suiteName);
+  if (!suite) return;
+  const row = suite.tests.get(testName);
+  if (!row) return;
+  const icon = row.querySelector('.suite-test-icon');
+  const tipMap = { pass: 'Passed', fail: 'Failed', skip: 'Skipped', running: 'Running', pending: 'Pending' };
+  icon.className = `suite-test-icon ${status}`;
+  icon.setAttribute('data-tip', tipMap[status] || status);
+  icon.innerHTML = iconForStatus(status);
+  if (duration) row.querySelector('.suite-test-dur').textContent = duration;
+  updateSuiteCountPills(suiteName);
+}
+
+function updateSuiteCountPills(suiteName) {
+  const suite = suitesMap.get(suiteName);
+  if (!suite) return;
+  let pass = 0, fail = 0, skip = 0;
+  suite.tests.forEach((row) => {
+    const cls = row.querySelector('.suite-test-icon').className;
+    if (cls.includes('pass')) pass++;
+    else if (cls.includes('fail')) fail++;
+    else if (cls.includes('skip')) skip++;
+  });
+  const catTotal = TEST_CATALOGUE.filter(t => t.suite === suiteName).length || suite.tests.size;
+  let html = `<span class="suite-count-pill total">${catTotal} tests</span>`;
+  if (pass > 0) html += `<span class="suite-count-pill pass" data-tip="${pass} passed">✓ ${pass}</span>`;
+  if (fail > 0) html += `<span class="suite-count-pill fail" data-tip="${fail} failed">✗ ${fail}</span>`;
+  if (skip > 0) html += `<span class="suite-count-pill skip" data-tip="${skip} skipped">⊘ ${skip}</span>`;
+  suite.countsEl.innerHTML = html;
+}
+
+function toggleSuiteBlock(el) {
+  el.classList.toggle('open');
+}
+function expandAllSuites() {
+  document.querySelectorAll('.suite-block').forEach(b => b.classList.add('open'));
+  document.querySelectorAll('.suite-test-row').forEach(r => r.classList.add('open'));
+}
+function collapseAllSuites() {
+  document.querySelectorAll('.suite-block').forEach(b => b.classList.remove('open'));
+  document.querySelectorAll('.suite-test-row').forEach(r => r.classList.remove('open'));
+}
+
+function updateTestsCount() {
+  updateOutputCount();
+}
+
+function initTestsCatalogue() {
+  TEST_CATALOGUE.forEach(t => ensureTestEntry(t.suite, t.name));
+  updateTestsCount();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Footer
+// ─────────────────────────────────────────────────────────────────────────────
+function updateFooter(status) {
+  const entries = [...testMap.values()];
+  const passed  = entries.filter(e => e.status === 'pass').length;
+  const failed  = entries.filter(e => e.status === 'fail').length;
+  const skipped = entries.filter(e => e.status === 'skip').length;
+
+  document.getElementById('footer-pass').textContent = passed;
+  document.getElementById('footer-fail').textContent = failed;
+  document.getElementById('footer-skip').textContent = skipped;
+
+  const skipStat = document.getElementById('footer-skip-stat');
+  skipStat.style.display = skipped > 0 ? '' : 'none';
+
+  if (runStart) {
+    document.getElementById('footer-duration').textContent = formatDuration((Date.now() - runStart) / 1000);
+  }
+
+  const statusText = document.getElementById('footer-status-text');
+  if (status === 'passed') { statusText.textContent = 'All passed'; statusText.style.color = 'var(--done)'; }
+  else if (status === 'failed') { statusText.textContent = 'Run failed'; statusText.style.color = 'var(--danger)'; }
+  else { statusText.textContent = 'Running…'; statusText.style.color = 'var(--accent)'; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SSE / init
+// ─────────────────────────────────────────────────────────────────────────────
+async function init() {
+  const { catalogue } = await (await fetch('/api/catalogue')).json();
+  TEST_CATALOGUE = catalogue;
+  initTestsCatalogue();
+
+  const { files } = await (await fetch('/api/tests')).json();
+  allFiles = files;
+  renderSidebar(files);
+
+  const { status, log } = await (await fetch('/api/status')).json();
+  setStatus(status);
+  log.forEach(line => ingestLine(line, line.startsWith('[stderr]') ? 'stderr' : 'stdout'));
+
+  es = new EventSource('/api/events');
+  es.addEventListener('status',    e => { const d = JSON.parse(e.data); setStatus(d.status); });
+  es.addEventListener('log',       e => { const d = JSON.parse(e.data); ingestLine(d.line, d.tag); });
+  es.addEventListener('run-files', e => {
+    const d = JSON.parse(e.data);
+    if (d.files && d.files.length > 0) {
+      d.files.forEach(f => {
+        const suiteName = fileToSuiteLabel(f);
+        // pre-populate suite block so it shows up before tests stream in
+        ensureSuiteBlock(suiteName);
+      });
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar
+// ─────────────────────────────────────────────────────────────────────────────
+function fileToSuiteLabel(f) {
+  return f.replace(/^\d+-/, '').replace(/\.(spec|test)\.ts$/, '').replace(/-/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar — grouped view
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Map filename → canonical group label.
+// Extension specs for Chrome/Firefox/Safari are consolidated into one group.
+const EXTENSION_SPEC_RE = /extension-load-and-login|extension.load.and.login/i;
+
+function fileToGroupLabel(f) {
+  if (EXTENSION_SPEC_RE.test(f)) return 'Extension Load & Login';
+  return fileToSuiteLabel(f);
+}
+
+function fileToGroupKey(f) {
+  return EXTENSION_SPEC_RE.test(f) ? '__extension__' : f;
+}
+
+function fileToBrowserTag(f) {
+  const lf = f.toLowerCase();
+  if (lf.includes('firefox'))  return 'firefox';
+  if (lf.includes('safari'))   return 'safari';
+  if (lf.includes('chrome') || EXTENSION_SPEC_RE.test(f)) return 'chrome';
+  return null;
+}
+
+// groups: Map<groupKey, { label, files: string[], browsers: Set<string> }>
+function buildGroups(files) {
+  const map = new Map();
+  files.forEach(f => {
+    const key   = fileToGroupKey(f);
+    const label = fileToGroupLabel(f);
+    if (!map.has(key)) map.set(key, { label, files: [], browsers: new Set() });
+    const g = map.get(key);
+    g.files.push(f);
+    const b = fileToBrowserTag(f);
+    if (b) g.browsers.add(b);
+  });
+  return map;
+}
+
+function renderSidebar(files) {
+  const list = document.getElementById('test-list');
+  if (!files.length) return;
+  list.innerHTML = '';
+
+  const groups = buildGroups(files);
+  const FILE_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+  const GROUP_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+
+  groups.forEach((g, key) => {
+    const isGroup = g.files.length > 1;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'test-group';
+    wrapper.dataset.groupKey = key;
+
+    const header = document.createElement('label');
+    header.className = 'test-group-header';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true;
+    cb.addEventListener('change', () => {
+      g.files.forEach(f => {
+        if (cb.checked) selectedFiles.add(f);
+        else            selectedFiles.delete(f);
+      });
+      updateSelSummary();
+      updateGroupBadges();
+    });
+
+    const icon = document.createElement('div');
+    icon.className = 'test-group-icon';
+    icon.innerHTML = isGroup ? GROUP_ICON : FILE_ICON;
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'test-group-label';
+    labelEl.textContent = g.label;
+
+    header.append(cb, icon, labelEl);
+
+    if (g.browsers.size > 0) {
+      const badges = document.createElement('div');
+      badges.className = 'test-group-browsers';
+      ['chrome', 'firefox', 'safari'].forEach(b => {
+        if (!g.browsers.has(b)) return;
+        const badge = document.createElement('span');
+        badge.className = 'test-group-browser-badge';
+        badge.dataset.browser = b;
+        badge.textContent = b === 'chrome' ? 'Chr' : b === 'firefox' ? 'Ff' : 'Sfr';
+        badges.appendChild(badge);
+      });
+      header.appendChild(badges);
+    }
+
+    wrapper.appendChild(header);
+    list.appendChild(wrapper);
+
+    g.files.forEach(f => selectedFiles.add(f));
+  });
+
+  updateSelSummary();
+  updateGroupBadges();
+}
+
+function updateSelSummary() {
+  const badge = document.getElementById('sel-count-badge');
+  if (badge) badge.textContent = selectedFiles.size;
+}
+
+function updateGroupBadges() {
+  const activeBrowsers = getSelectedBrowsers();
+  document.querySelectorAll('.test-group-browser-badge').forEach(badge => {
+    badge.classList.toggle('active', activeBrowsers.includes(badge.dataset.browser));
+  });
+}
+
+function toggleAll() {
+  const allSelected = allFiles.every(f => selectedFiles.has(f));
+  document.querySelectorAll('.test-group-header input[type=checkbox]').forEach(cb => {
+    cb.checked = !allSelected;
+  });
+  if (allSelected) allFiles.forEach(f => selectedFiles.delete(f));
+  else             allFiles.forEach(f => selectedFiles.add(f));
+  updateSelSummary();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status pill
+// ─────────────────────────────────────────────────────────────────────────────
+function setStatus(s) {
+  const pill = document.getElementById('status-pill');
+  const dot  = document.getElementById('status-dot');
+  const lbl  = document.getElementById('status-label');
+  pill.className = 'status-pill ' + s;
+  dot.className  = 'status-dot '  + s;
+  lbl.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+
+  document.getElementById('run-btn').disabled  = s === 'running';
+  document.getElementById('stop-btn').disabled = s !== 'running';
+
+  if (s === 'running') { runStart = Date.now(); setAutoScroll(true); }
+  if (s === 'passed' || s === 'failed') {
+    finaliseResults(s);
+    updateFooter(s);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ingest log line
+// ─────────────────────────────────────────────────────────────────────────────
+function ingestLine(rawLine, tag) {
+  rawLineCount++;
+  const clean = rawLine.replace(/\x1B\[[0-9;]*m/g, '').trim();
+
+  // Classify and route to current test log group
+  const cls = classifyRaw(clean, tag);
+
+  // Detect test-start line from --reporter=list:
+  //   "  [N/total] [project] › file:line:col › Suite Name › Test Name"
+  const startParsed = parseStartLine(clean);
+  if (startParsed) {
+    const key = ensureTestEntry(startParsed.suite, startParsed.name);
+    currentTestKey = key;
+    setTestRunning(key);
+  }
+
+  // Parse test result lines from --reporter=list
+  const parsed = parseTestLine(clean);
+  if (parsed) {
+    const { suite, name, dur } = parsed;
+    const isPass = /^\s*(✓|√)\s/.test(clean);
+    const isFail = /^\s*(✘|×|✗)\s/.test(clean);
+    const isSkip = /^\s*[-–]\s+\d+\s+\[/.test(clean);
+    const status = isPass ? 'pass' : isFail ? 'fail' : isSkip ? 'skip' : 'pass';
+    finalizeTest(suite, name, status, dur);
+  } else if (!startParsed) {
+    // Append raw line to the current test's log group
+    if (currentTestKey) appendToTestLog(currentTestKey, clean, cls);
+    else appendToMeta(clean, cls);
+  }
+
+  // Show summary lines in output header
+  if (/\d+\s+passed/.test(clean) || /\d+\s+failed/.test(clean)) {
+    updateSummaryLine(clean);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test line parsers (--reporter=list format)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Parses test-start lines emitted by --reporter=list:
+//   "    [system-chrome] › tests/file.spec.ts:17:7 › Suite Name › Test Name"
+// (no leading [N/total] in this Playwright version — just [project])
+function parseStartLine(clean) {
+  // Must start with [project] and contain › separators — but must NOT be a result line (✓ ✘ -)
+  if (/^\s*(✓|√|✘|×|✗|[-–]\s+\d)/.test(clean)) return null;
+  if (!/^\s*\[/.test(clean)) return null;
+  if (clean.indexOf('›') === -1) return null;
+  const parts = clean.split('›').map(s => s.trim());
+  // parts[0] = "[project]", parts[1] = "file:line", parts[2] = Suite, parts[3] = Test
+  if (parts.length < 4) return null;
+  const suite = parts[2].trim();
+  const name  = parts[3].trim();
+  if (!suite || !name) return null;
+  return { suite, name };
+}
+
+function parseTestLine(clean) {
+  // Playwright list reporter: ✓  1 [project] › file:line:col › Suite Name › Test Name (dur)
+  //                           ✘  2 [project] › file:line:col › Suite Name › Test Name
+  const isResult = /^\s*(✓|√|✘|×|✗)\s/.test(clean) || /^\s*[-–]\s+\d+\s+\[/.test(clean);
+  if (!isResult) return null;
+
+  const arrowIdx = clean.indexOf('›');
+  if (arrowIdx === -1) return null;
+  const rest  = clean.slice(arrowIdx);
+  const parts = rest.split('›').map(s => s.trim());
+  if (parts.length < 4) return null;
+
+  const suite = parts[2].trim();
+  const name  = parts[3]
+    .replace(/\s+\(\d+(?:\.\d+)?(?:ms|s)\)\s*$/, '')
+    .replace(/\s+\(retry\s+\d+\)\s*$/, '')
+    .trim();
+  const durM  = parts[3].match(/\((\d+(?:\.\d+)?(?:ms|s))\)\s*$/);
+  const dur   = durM ? durM[1] : null;
+  if (!suite || !name) return null;
+  return { suite, name, dur };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test entries — Output tab rows & Logs tab groups
+// ─────────────────────────────────────────────────────────────────────────────
+function ensureTestEntry(suite, name, status = 'pending') {
+  const key = `${suite}::${name}`;
+  if (testMap.has(key)) return key;
+
+  const row = document.createElement('div');
+  row.className = 'output-row';
+  row.innerHTML = `
+    <div class="row-top">
+      <div class="row-icon pending" data-tip="Pending">${ICON_PENDING}</div>
+      <div class="row-main">
+        <div class="row-name">${escHtml(cap(name))}</div>
+        <div class="row-suite">${escHtml(suite)}</div>
+      </div>
+      <div class="row-right">
+        <div class="row-duration"></div>
+        <button class="output-row-run" data-tip="Run this test" onclick="event.stopPropagation();runOutputRow(this)">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+        </button>
+        <div class="row-chevron">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+    </div>
+    <div class="row-log-body"></div>
+  `;
+  row.dataset.key = key;
+  row.querySelector('.row-top').addEventListener('click', () => row.classList.toggle('open'));
+
+  document.getElementById('output-empty').style.display = 'none';
+  document.getElementById('output-rows').appendChild(row);
+
+  const groupBodyEl = row.querySelector('.row-log-body');
+
+  ensureSuiteTestRow(suite, name);
+
+  // groupEl points to the row itself so existing finalize/badge code keeps working
+  const entry = { suite, name, status, rowEl: row, groupEl: row, groupBodyEl, lineCount: 0 };
+  testMap.set(key, entry);
+  updateOutputCount();
+  return key;
+}
+
+function iconForStatus(status) {
+  return { pass: ICON_PASS, fail: ICON_FAIL, skip: ICON_SKIP, running: ICON_SPIN, pending: ICON_PENDING }[status] || ICON_PENDING;
+}
+
+function setTestRunning(key) {
+  const e = testMap.get(key);
+  if (!e || e.status === 'running') return;
+  e.status = 'running';
+  const ri = e.rowEl.querySelector('.row-icon');
+  ri.className = 'row-icon running'; ri.setAttribute('data-tip', 'Running'); ri.innerHTML = ICON_SPIN;
+  updateSuiteTestRow(e.suite, e.name, 'running', null);
+  updateOutputCount();
+}
+
+function finalizeTest(suite, name, status, duration) {
+  const key = ensureTestEntry(suite, name, status);
+  const e   = testMap.get(key);
+  if (!e) return;
+
+  e.status = status;
+  currentTestKey = key;
+
+  const iconHtml = iconForStatus(status);
+
+  const tipMap = { pass: 'Passed', fail: 'Failed', skip: 'Skipped', running: 'Running', pending: 'Pending' };
+
+  // Update output row
+  const rowIcon = e.rowEl.querySelector('.row-icon');
+  rowIcon.className = `row-icon ${status}`;
+  rowIcon.setAttribute('data-tip', tipMap[status] || status);
+  rowIcon.innerHTML = iconHtml;
+  if (duration) e.rowEl.querySelector('.row-duration').textContent = duration;
+
+  // Auto-open on fail
+  if (status === 'fail') {
+    e.rowEl.classList.add('fail-row');
+    loadScreenshot(e);
+  }
+
+  // Update footer last test
+  document.getElementById('footer-last-test').textContent = cap(name);
+  document.getElementById('footer-last-dur').textContent = duration ? `(${duration})` : '';
+
+  // Update tests tab
+  updateSuiteTestRow(suite, name, status, duration);
+
+  updateOutputCount();
+  updateRerunFailedBtn();
+  scrollOutputIfNeeded(e.rowEl);
+}
+
+async function loadScreenshot(entry) {
+  try {
+    const r = await fetch(`/api/screenshot?suite=${encodeURIComponent(entry.suite)}&name=${encodeURIComponent(entry.name)}`);
+    const { url } = await r.json();
+    if (!url) return;
+    if (entry.groupBodyEl.querySelector('.screenshot-link')) return;
+    const link = document.createElement('a');
+    link.className = 'screenshot-link';
+    link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    link.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> View failure screenshot ↗`;
+    entry.groupBodyEl.appendChild(link);
+    entry.rowEl.classList.add('open');
+  } catch (_) {}
+}
+
+function appendToTestLog(key, line, cls) {
+  const e = testMap.get(key);
+  if (!e || !line.trim()) return;
+
+  if (cls === 'fixture' || cls === 'step') {
+    const variant = stepVariant(line, cls);
+    const icon    = stepIcon(variant);
+    const row = document.createElement('div');
+    row.className = `log-step ${variant}`;
+    row.innerHTML = `<span class="log-step-icon">${escHtml(icon)}</span><span class="log-step-text">${escHtml(line.trim())}</span>`;
+    e.groupBodyEl.appendChild(row);
+  } else {
+    const span = document.createElement('span');
+    span.className = 'log-line ' + cls;
+    span.textContent = line;
+    e.groupBodyEl.appendChild(span);
+    e.groupBodyEl.appendChild(document.createTextNode('\n'));
+  }
+  e.lineCount++;
+}
+
+function appendToMeta(line, cls) {
+  if (!line.trim()) return;
+  if (!metaGroupEl) {
+    metaGroupEl = document.createElement('div');
+    metaGroupEl.className = 'log-group';
+    metaGroupEl.id = 'log-meta';
+    metaGroupEl.innerHTML = `
+      <div class="log-group-header" onclick="toggleGroup(this.parentElement)">
+        <div class="log-group-badge meta">≡</div>
+        <div class="log-group-name muted">Run info &amp; stderr</div>
+        <div class="log-group-duration"></div>
+        <div class="log-group-chevron">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+      <div class="log-group-body"></div>
+    `;
+    const logsBody = document.getElementById('output-rows');
+    logsBody.insertBefore(metaGroupEl, logsBody.firstChild);
+    metaGroupBodyEl = metaGroupEl.querySelector('.log-group-body');
+  }
+  const span = document.createElement('span');
+  span.className = 'log-line ' + cls;
+  span.textContent = line;
+  metaGroupBodyEl.appendChild(span);
+  metaGroupBodyEl.appendChild(document.createTextNode('\n'));
+  metaLineCount++;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleGroup(el) { el.classList.toggle('open'); }
+
+
+function updateOutputCount() {
+  const vals = [...testMap.values()];
+  const total   = vals.length;
+  const running = vals.filter(e => e.status === 'running').length;
+  const el = document.getElementById('output-count');
+  if (!el) return;
+  el.textContent = String(total);
+  el.title = running > 0 ? `${running} running` : '';
+}
+
+function updateSummaryLine(text) {
+  const el = document.getElementById('output-summary');
+  el.style.display = '';
+  el.textContent = text;
+}
+
+let autoScroll = true;
+
+function setAutoScroll(on) {
+  autoScroll = on;
+  const ind = document.getElementById('autoscroll-indicator');
+  if (ind) {
+    ind.className = on ? 'autoscroll-on' : 'autoscroll-off';
+    ind.setAttribute('data-tip', on ? 'Scroll up to pause' : 'Scroll to bottom to re-enable');
+  }
+}
+
+(function initAutoScrollListener() {
+  document.addEventListener('DOMContentLoaded', () => {
+    const body = document.getElementById('output-body');
+    if (!body) return;
+    let userInitiated = false;
+    ['wheel', 'touchstart', 'mousedown'].forEach(evt =>
+      body.addEventListener(evt, () => { userInitiated = true; }, { passive: true })
+    );
+    body.addEventListener('scroll', () => {
+      if (!userInitiated) return;
+      userInitiated = false;
+      const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 40;
+      setAutoScroll(atBottom);
+    });
+  });
+})();
+
+function scrollOutputIfNeeded(el) {
+  if (!autoScroll) return;
+  const body = document.getElementById('output-body');
+  body.scrollTop = Math.max(0, el.offsetTop - 20);
+}
+
+function classifyRaw(line, tag) {
+  if (tag === 'stderr') return 'stderr';
+  if (/^\s*(✓|√)\s/.test(line))         return 'pass';
+  if (/^\s*(✘|×|✗)\s/.test(line))       return 'fail';
+  if (/^\s*[-–]\s+\d+\s+\[/.test(line)) return 'skip';
+  if (/\d+\s+passed/.test(line) && !/failed/.test(line)) return 'pass';
+  if (/\d+\s+failed/.test(line))        return 'fail';
+  if (/^(Error|TimeoutError|AssertionError|expect\()/.test(line.trim())) return 'fail';
+  if (/^\s{2,}at /.test(line))          return 'detail';
+  if (/^\s{2,}[+\-]\s/.test(line))      return 'detail';
+  if (/^Running \d+/.test(line.trim())) return 'info';
+  if (/^[─═\-─]+$/.test(line.trim()))   return 'sep';
+  if (/\bwarn(ing)?\b/i.test(line))     return 'warn';
+  if (/^\s*(>|»)\s/.test(line))         return 'info';
+  // fixture setup/teardown lines
+  if (/^\[fixture:/.test(line.trim()))  return 'fixture';
+  // console.log output from test code (leading spaces + content)
+  if (/^\s{2,}\S/.test(line))           return 'step';
+  return 'muted';
+}
+
+// Classify a step-row variant for step/fixture lines
+function stepVariant(line, cls) {
+  if (cls === 'fixture') return 'step-fixture';
+  // console output heuristics
+  if (/error|fail|✗|✘/i.test(line))    return 'step-fail';
+  if (/warn/i.test(line))               return 'step-warn';
+  if (/✓|√|pass|confirmed|success/i.test(line)) return 'step-pass';
+  return 'step-info';
+}
+
+// Icon for step variant
+function stepIcon(variant) {
+  if (variant === 'step-fixture') return '⚙';
+  if (variant === 'step-fail')    return '✗';
+  if (variant === 'step-pass')    return '✓';
+  if (variant === 'step-warn')    return '⚠';
+  return '›';
+}
+
+function formatDuration(secs) {
+  if (secs < 60) return secs.toFixed(1) + 's';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return m + 'm ' + String(s).padStart(2, '0') + 's';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function cap(s) {
+  const str = String(s);
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Results bar
+// ─────────────────────────────────────────────────────────────────────────────
+function finaliseResults(status) {
+  document.getElementById('result-bar').classList.add('visible');
+  const entries = [...testMap.values()];
+  const passed  = entries.filter(e => e.status === 'pass').length;
+  const failed  = entries.filter(e => e.status === 'fail').length;
+  const skipped = entries.filter(e => e.status === 'skip').length;
+
+  document.getElementById('res-pass').textContent = passed;
+  document.getElementById('res-fail').textContent = failed;
+
+  const skipCard = document.getElementById('res-skip-card');
+  if (skipped > 0) {
+    document.getElementById('res-skip').textContent = skipped;
+    skipCard.style.display = '';
+  } else {
+    skipCard.style.display = 'none';
+  }
+
+  if (runStart) {
+    document.getElementById('res-time').textContent = formatDuration((Date.now() - runStart) / 1000);
+  }
+
+  showToast(
+    status === 'passed'
+      ? `✓  ${passed} test${passed !== 1 ? 's' : ''} passed`
+      : `✗  ${failed} test${failed !== 1 ? 's' : ''} failed`,
+    status === 'passed' ? 'success' : 'error'
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Actions
+// ─────────────────────────────────────────────────────────────────────────────
+function clearAll() {
+  testMap.clear();
+  suitesMap.clear();
+  currentTestKey = null;
+  metaGroupEl = null;
+  metaGroupBodyEl = null;
+  metaLineCount = 0;
+  rawLineCount = 0;
+  document.getElementById('output-rows').innerHTML = '';
+  document.getElementById('suite-overview').innerHTML = '';
+  document.getElementById('output-empty').style.display = '';
+  initTestsCatalogue();
+  document.getElementById('output-summary').style.display = 'none';
+  document.getElementById('output-summary').textContent = '';
+  document.getElementById('output-count').textContent = '0';
+  document.getElementById('result-bar').classList.remove('visible');
+  updateRerunFailedBtn();
+  updateRunSelectedBtn();
+  document.getElementById('footer-pass').textContent = '—';
+  document.getElementById('footer-fail').textContent = '—';
+  document.getElementById('footer-duration').textContent = '—';
+  document.getElementById('footer-last-test').textContent = '—';
+  document.getElementById('footer-last-dur').textContent = '';
+  document.getElementById('footer-status-text').textContent = 'No run yet';
+  document.getElementById('footer-status-text').style.color = 'var(--muted)';
+}
+
+async function startRun() {
+  clearAll();
+  const grep     = document.getElementById('grep-input').value.trim();
+  const files    = allFiles.length ? [...selectedFiles] : [];
+  const browsers = getSelectedBrowsers();
+  if (allFiles.length && files.length === 0) {
+    showToast('No test suites selected', 'error');
+    return;
+  }
+  if (browsers.length === 0) {
+    showToast('Select at least one browser', 'error');
+    return;
+  }
+  const resp = await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files, grep: grep || undefined, browsers }),
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    showToast(data.error ?? `Failed to start run (${resp.status})`, 'error');
+  }
+}
+
+async function stopRun() {
+  await fetch('/api/stop', { method: 'POST' });
+  showToast('Run stopped');
+}
+
+// Build an exact-match grep pattern for a single test.
+// Playwright matches --grep against the full title: "Suite Name > Test Name"
+// Anchoring with " > test name$" ensures only that exact test is selected.
+function exactGrepFor(suite, name) {
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return esc(suite) + ' > ' + esc(name) + '$';
+}
+
+async function runSingleTest(file, suiteName, testName) {
+  clearAll();
+  switchTab('output');
+  const browsers = getSelectedBrowsers();
+  await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: file ? [file] : [], grep: exactGrepFor(suiteName, testName), browsers: browsers.length ? browsers : undefined }),
+  });
+}
+
+// Run the test whose output-row contains the clicked ▷ button
+function runOutputRow(btn) {
+  const rowEl = btn.closest('.output-row');
+  const key = rowEl.dataset.key;
+  const e = testMap.get(key);
+  if (!e) return;
+  const cat = TEST_CATALOGUE.find(t => t.suite === e.suite && t.name === e.name);
+  runSingleTest(cat ? cat.file : '', e.suite, e.name);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Re-run failed tests
+// ─────────────────────────────────────────────────────────────────────────────
+function rerunFailed() {
+  const failed = [...testMap.values()].filter(e => e.status === 'fail');
+  if (!failed.length) return;
+  const grep = failed.map(e => exactGrepFor(e.suite, e.name)).join('|');
+  const browsers = getSelectedBrowsers();
+  clearAll();
+  switchTab('output');
+  fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: allFiles.length ? [...selectedFiles] : [], grep, browsers: browsers.length ? browsers : undefined }),
+  });
+}
+
+function updateRerunFailedBtn() {
+  const hasFailed = [...testMap.values()].some(e => e.status === 'fail');
+  const btn = document.getElementById('rerun-failed-btn');
+  const div = document.getElementById('rerun-divider');
+  if (btn) btn.style.display = hasFailed ? '' : 'none';
+  if (div) div.style.display = hasFailed ? '' : 'none';
+  // Keep "Select all failed" button in sync
+  const sfBtn = document.getElementById('select-failed-btn');
+  if (sfBtn) sfBtn.style.display = hasFailed ? '' : 'none';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-select + run selected
+// ─────────────────────────────────────────────────────────────────────────────
+function updateRunSelectedBtn() {
+  const n = document.querySelectorAll('.suite-test-cb:checked').length;
+  const btn      = document.getElementById('run-selected-btn');
+  const countEl  = document.getElementById('run-selected-count');
+  const div      = document.getElementById('selected-divider');
+  if (btn)     btn.style.display = n > 0 ? '' : 'none';
+  if (div)     div.style.display = n > 0 ? '' : 'none';
+  if (countEl) countEl.textContent = n;
+}
+
+function selectAllFailed() {
+  // Uncheck everything first
+  document.querySelectorAll('.suite-test-cb').forEach(cb => { cb.checked = false; });
+  // Check only the rows whose test is in failed state
+  for (const [, e] of testMap) {
+    if (e.status !== 'fail') continue;
+    const suiteEntry = suitesMap.get(e.suite);
+    if (!suiteEntry) continue;
+    const rowEl = suiteEntry.tests.get(e.name);
+    if (!rowEl) continue;
+    const cb = rowEl.querySelector('.suite-test-cb');
+    if (cb) cb.checked = true;
+  }
+  updateRunSelectedBtn();
+}
+
+async function runSelected() {
+  const checked = [...document.querySelectorAll('.suite-test-cb:checked')];
+  if (!checked.length) return;
+  const pairs = [];
+  for (const cb of checked) {
+    const rowEl = cb.closest('.suite-test-row');
+    // Resolve suite+name from testMap (suite-test-row is keyed there)
+    let resolved = null;
+    for (const [, e] of testMap) {
+      const suiteEntry = suitesMap.get(e.suite);
+      if (suiteEntry?.tests.get(e.name) === rowEl) { resolved = { suite: e.suite, name: e.name }; break; }
+    }
+    // Fallback: match via catalogue using the displayed (capitalised) name
+    if (!resolved) {
+      const displayed = rowEl.querySelector('.suite-test-name')?.textContent ?? '';
+      const cat = TEST_CATALOGUE.find(t => cap(t.name) === displayed);
+      if (cat) resolved = { suite: cat.suite, name: cat.name };
+    }
+    if (resolved) pairs.push(resolved);
+  }
+  const unique = [...new Map(pairs.map(p => [p.suite + '::' + p.name, p])).values()];
+  if (!unique.length) return;
+  const grep = unique.map(p => exactGrepFor(p.suite, p.name)).join('|');
+  const browsers = getSelectedBrowsers();
+  clearAll();
+  switchTab('output');
+  await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: allFiles.length ? [...selectedFiles] : [], grep, browsers: browsers.length ? browsers : undefined }),
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Toast
+// ─────────────────────────────────────────────────────────────────────────────
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = '', 3500);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Grep sidebar filter
+// ─────────────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('grep-input').addEventListener('input', function () {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('.test-group').forEach((item) => {
+      const name = item.querySelector('.test-group-label')?.textContent.toLowerCase() ?? '';
+      item.style.display = !q || name.includes(q) ? '' : 'none';
+    });
+  });
+  init();
+});
+</script>
+</body>
+</html>

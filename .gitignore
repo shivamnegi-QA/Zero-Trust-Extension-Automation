@@ -1,0 +1,12 @@
+.env
+.ca-bundle.pem
+node_modules/
+dist/
+reports/
+test-results/
+extension builds/
+*.png
+.DS_Store
+.claude/
+.mcp.json
+.playwright-mcp/
