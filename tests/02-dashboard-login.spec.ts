@@ -1,21 +1,21 @@
 import { test, expect, clearSession } from '../fixtures/base';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
 
 const EMAIL    = process.env.EXTENSION_LOGIN_EMAIL!;
 const PASSWORD = process.env.EXTENSION_LOGIN_PASSWORD!;
 const BASE_URL = process.env.SQRX_BASE_URL!;
 
-test.describe('Dashboard Login', () => {
+test.describe.serial('Dashboard Login', () => {
 
-  // @desc Navigates to the base URL after clearing session and verifies the login form is present and interactive.
-  // @validates email input and submit button are visible within 15s — login form rendered correctly on unauthenticated load
-  test('Login page loads', async ({ context, page }) => {
+  // Clear session once before the entire suite — tests chain from here.
+  test.beforeAll(async ({ context }) => {
     await clearSession(context, BASE_URL);
+  });
 
+  // @desc Navigates to the base URL and verifies the login form is present and interactive.
+  // @validates email input and submit button are visible within 15s — login form rendered correctly on unauthenticated load
+  test('Login page loads', async ({ page }) => {
     const loginPage = new LoginPage(page);
     await loginPage.goto(BASE_URL);
 
@@ -28,9 +28,8 @@ test.describe('Dashboard Login', () => {
 
   // @desc Submits a deliberately wrong password and confirms the user is not redirected to the enterprise dashboard.
   // @validates page URL does not match /enterprise/#/ and an error state or login page is still shown after failed login attempt
-  test('Login fails with wrong password', async ({ context, page }) => {
+  test('Login fails with wrong password', async ({ page }) => {
     test.slow();
-    await clearSession(context, BASE_URL);
 
     const loginPage = new LoginPage(page);
     await loginPage.goto(BASE_URL);
@@ -57,9 +56,8 @@ test.describe('Dashboard Login', () => {
 
   // @desc Logs in with valid credentials and confirms the browser redirects to the enterprise dashboard with navigation visible.
   // @validates URL matches /enterprise/#/ and sidebar nav is visible after successful login
-  test('Login succeeds with valid credentials', async ({ context, page }) => {
+  test('Login succeeds with valid credentials', async ({ page }) => {
     test.slow();
-    await clearSession(context, BASE_URL);
 
     const loginPage = new LoginPage(page);
     const dashboard = new DashboardPage(page);
@@ -77,18 +75,30 @@ test.describe('Dashboard Login', () => {
     await page.screenshot({ path: 'extension builds/screenshots/test-login-success.png' });
   });
 
-  // @desc Logs in, reloads the page, and confirms the dashboard session is preserved without requiring re-authentication.
-  // @validates DashboardPage.isLoaded() returns true within 10s after reload — session cookie remains valid across a hard reload
-  test('Session persists after page reload', async ({ context, page }) => {
+  // @desc Verifies the dashboard session persists across a page reload.
+  // Continues from the logged-in state left by the previous test.
+  // When run in isolation (beforeAll cleared the session), logs in first.
+  // @validates DashboardPage.isLoaded() returns true within 10s after reload
+  test('Session persists after page reload', async ({ page }) => {
     test.slow();
-    await clearSession(context, BASE_URL);
 
     const loginPage = new LoginPage(page);
     const dashboard = new DashboardPage(page);
 
-    await loginPage.goto(BASE_URL);
-    await loginPage.login(EMAIL, PASSWORD);
-    await loginPage.waitForLoginSuccess();
+    // Navigate to BASE_URL. If a session cookie is present the SPA will redirect
+    // to /enterprise/ — wait up to 6s for that redirect before deciding to login.
+    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+
+    const alreadyLoggedIn = await page
+      .waitForURL(/\/enterprise\//, { timeout: 6_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!alreadyLoggedIn) {
+      // Running in isolation or session expired — login first.
+      await loginPage.login(EMAIL, PASSWORD);
+      await loginPage.waitForLoginSuccess();
+    }
 
     await page.reload({ waitUntil: 'domcontentloaded' });
 

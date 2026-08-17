@@ -1,64 +1,12 @@
 import { test, expect, EMAIL, PASSWORD, BASE_URL } from '../fixtures/extension';
-import { isConnectedState } from './helpers/webdriver-login';
-import type { PopupSession } from '../fixtures/extension';
+import { isConnectedState, webdriverLogin, sleep } from './helpers/webdriver-login';
 
-/**
- * Log into the dashboard using WebDriver sendKeys (most reliable cross-browser input method).
- * Works for Chrome (Playwright-backed), Firefox (geckodriver), and Safari (safaridriver).
- */
-async function loginViaDashboard(session: PopupSession): Promise<void> {
-  await session.navigate(BASE_URL);
-  await sleep(5_000);
+test.describe.serial('Extension Load And Login', () => {
 
-  // Wait for and fill email input
-  const emailEl = await session.poll(
-    () => session.findElement('css selector', '[data-testid="input-email"]'),
-    el => el !== null,
-    { timeout: 15_000, interval: 1_000, message: 'Email input not found on dashboard' },
-  );
-  if (!emailEl) throw new Error('Email input not found');
-  await session.sendKeys(emailEl, EMAIL);
-  await sleep(500);
-
-  const submitBtn1 = await session.findElement('css selector', '[data-testid="button-submit"]');
-  if (submitBtn1) await session.clickElement(submitBtn1);
-  await sleep(4_000);
-
-  // Optional SSO → password button
-  const ssoBtn = await session.findElement('xpath',
-    '//button[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"sign in with password")]',
-  );
-  if (ssoBtn) { await session.clickElement(ssoBtn); await sleep(2_000); }
-
-  // Wait for and fill password input
-  const pwEl = await session.poll(
-    () => session.findElement('css selector', '[data-testid="input-password"]'),
-    el => el !== null,
-    { timeout: 15_000, interval: 1_000, message: 'Password input not found' },
-  );
-  if (!pwEl) throw new Error('Password input not found');
-  await session.sendKeys(pwEl, PASSWORD);
-  await sleep(500);
-
-  const submitBtn2 = await session.findElement('css selector', '[data-testid="button-submit"]');
-  if (submitBtn2) await session.clickElement(submitBtn2);
-
-  // Wait for redirect to confirm login completed
-  await sleep(3_000);
-  const postLoginUrl = await session.currentUrl().catch(() => '');
-  console.log(`  Submitted login form — post-login URL: ${postLoginUrl}`);
-
-  // Give the extension time to receive the auth token.
-  // Safari needs extra time: the extension reads the dashboard cookie asynchronously.
-  await sleep(session.browser === 'chrome' ? 2_000 : session.browser === 'safari' ? 15_000 : 7_000);
-}
-
-function sleep(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
-
-test.describe('Extension Load And Login', () => {
-
-  // Clear auth state before each test so the shared browser session always starts unauthenticated.
-  test.beforeEach(async ({ extSession }) => {
+  // Clear auth once before the suite — tests chain from this clean state.
+  // In serial mode, retries restart from this test (T1) so shared state is
+  // always rebuilt correctly on failure.
+  test.beforeAll(async ({ extSession }) => {
     await extSession.clearAuth();
   });
 
@@ -71,6 +19,7 @@ test.describe('Extension Load And Login', () => {
   });
 
   // @desc Opens the extension popup and verifies it renders visible content.
+  // Continues from the loaded-extension state left by the previous test.
   // @validates popup body text length is greater than 0
   test('Extension popup opens', async ({ extSession, extId }) => {
     test.skip(!extId, 'Extension not loaded');
@@ -95,6 +44,7 @@ test.describe('Extension Load And Login', () => {
   });
 
   // @desc Opens the popup without a dashboard session and verifies Authenticate button is present.
+  // Continues from the open-popup state left by the previous test (popup is closed).
   // @validates Authenticate button text visible in popup body within 60s
   test('Extension popup shows unauthenticated state without dashboard session', async ({ extSession, extId }) => {
     test.skip(!extId, 'Extension not loaded');
@@ -119,13 +69,15 @@ test.describe('Extension Load And Login', () => {
     await extSession.closePopup().catch(() => {});
   });
 
-  // @desc Logs into the dashboard, opens the popup, and verifies it shows connected state.
+  // @desc Logs into the dashboard and verifies the popup transitions to connected state.
+  // Continues from the confirmed-unauthenticated state left by the previous test.
+  // When run in isolation, beforeAll cleared auth so the login step still works correctly.
   // @validates popup shows connected state (non-empty, no Authenticate button) after dashboard login
   test('Extension popup shows connected state after dashboard login', async ({ extSession, extId }) => {
     test.slow();
     test.skip(!extId, 'Extension not loaded');
 
-    await loginViaDashboard(extSession);
+    await webdriverLogin(extSession as any, BASE_URL, EMAIL, PASSWORD);
 
     // For Safari: navigate to the dashboard once more after login so the extension's
     // tab-update event fires and it re-reads the auth cookie.

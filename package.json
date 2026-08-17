@@ -6,8 +6,8 @@
   "scripts": {
     "test": "npx playwright test",
     "test:ui": "npx playwright test --config=playwright.ui.config.ts",
-    "test:smoke": "npx playwright test tests/01-extension-load-and-login.spec.ts tests/02-dashboard-login.spec.ts",
-    "test:ai-regression": "npx playwright test tests/policy/ai_assisted/",
+    "test:smoke": "npx playwright test tests/extension-load-and-login.spec.ts tests/02-dashboard-login.spec.ts",
+    "test:ai-regression": "npx playwright test tests/policy/",
     "test:regression": "npm run test:smoke && npm run test:ai-regression",
     "download-extension": "tsx scripts/download-extension.ts",
     "download-extension:force": "tsx scripts/download-extension.ts --force",
@@ -26,7 +26,9 @@
     "@types/node": "^26.1.2",
     "@types/unzipper": "^0.10.11",
     "axios": "^1.19.0",
+    "chromedriver": "^151.0.5",
     "dotenv": "^17.4.2",
+    "geckodriver": "^6.1.1",
     "playwright": "^1.62.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.5",
@@ -38,5 +40,9 @@
     "@playwright/mcp": "^0.0.79",
     "cors": "^2.8.6",
     "express": "^5.2.1"
+  },
+  "allowScripts": {
+    "chromedriver@151.0.5": true,
+    "geckodriver@6.1.1": true
   }
 }

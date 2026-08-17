@@ -10,24 +10,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
-import * as net from 'net';
+import { FIREFOX_BINARY, GECKODRIVER, IS_WINDOWS } from './platform';
+import { sleep, getFreePort } from './shared';
 
-export const FIREFOX_BINARY = '/Applications/Firefox.app/Contents/MacOS/firefox';
-export const GECKODRIVER    = '/opt/homebrew/bin/geckodriver';
+export { FIREFOX_BINARY, GECKODRIVER };
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.listen(0, () => {
-      const addr = srv.address() as net.AddressInfo;
-      srv.close(() => resolve(addr.port));
-    });
-    srv.on('error', reject);
-  });
+function killProcess(pid: number): void {
+  if (IS_WINDOWS) {
+    try { cp.spawnSync('taskkill', ['/PID', String(pid), '/F', '/T'], { stdio: 'ignore', timeout: 5_000 }); }
+    catch { /* already gone */ }
+  } else {
+    try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
+  }
 }
 
 // ── WebDriver client ──────────────────────────────────────────────────────────
@@ -261,12 +255,14 @@ export async function launchFirefoxWithExtension(opts: {
   let ffPid: number | null = null;
 
   const teardown = async (): Promise<void> => {
-    if (ffPid) {
-      try { process.kill(ffPid, 'SIGTERM'); } catch { /* already gone */ }
-      await sleep(400);
-    }
-    driver.kill('SIGTERM');
-    await sleep(400);
+    // Kill GeckoDriver with /T FIRST — this terminates GeckoDriver, Firefox, and
+    // all Firefox sub-processes while the tree is intact.
+    // Killing Firefox by PID first would orphan its content/GPU processes.
+    if (driver.pid != null) killProcess(driver.pid);
+    else driver.kill('SIGTERM');
+    // Belt-and-suspenders: also kill Firefox by its own PID.
+    if (ffPid) killProcess(ffPid);
+    await sleep(800);
   };
 
   try {

@@ -1,11 +1,10 @@
-// Minimal duck-type interface shared by GdSession (Firefox) and SdSession (Safari).
+// Minimal duck-type interface shared by GdSession (Firefox), SdSession (Safari), and PopupSession (Chrome/Edge).
 export interface WebDriverSession {
-  sessionId: string;
   navigate(url: string): Promise<unknown>;
-  json(method: string, path: string, body?: unknown): Promise<unknown>;
   findElement(strategy: string, selector: string): Promise<string | null>;
   clickElement(id: string): Promise<void>;
   execute<T>(script: string, args?: unknown[]): Promise<T>;
+  sendKeys(elementId: string, text: string): Promise<void>;
   poll<T>(fn: () => Promise<T>, cond: (v: T) => boolean, opts: { timeout: number; interval: number; message: string }): Promise<T>;
 }
 
@@ -31,7 +30,7 @@ export async function webdriverLogin(
     { timeout: 15_000, interval: 1_000, message: 'Email input not found on dashboard' },
   );
   if (!emailInput) throw new Error('Email input not found');
-  await session.json('POST', `/session/${session.sessionId}/element/${emailInput}/value`, { text: email });
+  await session.sendKeys(emailInput, email);
 
   const submitBtn1 = await session.findElement('css selector', '[data-testid="button-submit"]');
   if (!submitBtn1) throw new Error('Submit button not found after email input');
@@ -56,7 +55,7 @@ export async function webdriverLogin(
     'const el = document.querySelector(\'[data-testid="input-password"]\'); if(el){el.value=""; el.dispatchEvent(new Event("input",{bubbles:true}));}',
     [],
   );
-  await session.json('POST', `/session/${session.sessionId}/element/${pwInput}/value`, { text: password });
+  await session.sendKeys(pwInput, password);
 
   const submitBtn2 = await session.findElement('css selector', '[data-testid="button-submit"]');
   if (!submitBtn2) throw new Error('Submit button not found after password input');

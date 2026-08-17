@@ -45,6 +45,9 @@
       --log-body-bg: rgba(10,14,26,0.4);
 
       --blur: blur(14px) saturate(180%);
+
+      --font:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
     }
 
     /* ── Light theme ──────────────────────────────────────────────────────── */
@@ -84,8 +87,6 @@
       --blur: blur(14px) saturate(150%);
     }
 
-    --font:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
     --radius-sm: 8px;
     --radius:    12px;
 
@@ -469,7 +470,17 @@
     .controls-divider { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
     .controls-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
-    /* ── Browser selector pills ─────────────────────────────────────────────── */
+    /* ── OS mismatch warning banner ─────────────────────────────────────────── */
+    #os-mismatch-banner {
+      display: none; align-items: center; gap: 8px;
+      padding: 6px 16px; background: var(--wip-dim);
+      border-bottom: 1px solid rgba(245,158,11,0.3);
+      font-size: 11px; font-weight: 600; color: var(--wip);
+      flex-shrink: 0;
+    }
+    #os-mismatch-banner.visible { display: flex; }
+
+    /* ── OS + Browser selector ──────────────────────────────────────────────── */
     .browser-selector {
       display: flex; align-items: center; gap: 6px;
     }
@@ -477,6 +488,25 @@
       font-size: 10px; font-weight: 700; text-transform: uppercase;
       letter-spacing: 2px; color: var(--muted); white-space: nowrap;
     }
+
+    /* OS radio pills */
+    .os-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 11px 4px 9px; border-radius: 999px;
+      border: 1px solid var(--border); background: transparent;
+      font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+      cursor: pointer; color: var(--muted); user-select: none;
+      transition: background .12s, border-color .12s, color .12s, box-shadow .12s;
+      white-space: nowrap;
+    }
+    .os-pill input[type=radio] { display: none; }
+    .os-pill:hover { background: rgba(255,255,255,0.04); border-color: var(--border-2); color: var(--text); }
+    .os-pill.active {
+      background: var(--accent-dim); border-color: rgba(0,212,255,0.35);
+      color: var(--accent); box-shadow: 0 0 8px var(--accent-glow);
+    }
+    [data-theme="light"] .os-pill:hover { background: rgba(0,0,0,0.04); }
+
     .browser-pill {
       display: inline-flex; align-items: center; gap: 5px;
       padding: 4px 11px 4px 9px; border-radius: 999px;
@@ -1093,6 +1123,12 @@
 
   <!-- Main -->
   <main>
+    <!-- OS mismatch warning (shown when selected OS ≠ actual OS) -->
+    <div id="os-mismatch-banner">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span id="os-mismatch-text"></span>
+    </div>
+
     <!-- Controls -->
     <div class="controls">
       <button class="sidebar-toggle" id="sidebar-open-btn" title="Open sidebar" onclick="toggleSidebar()" style="display:none;margin-right:4px;">
@@ -1109,30 +1145,71 @@
         Stop
       </button>
       <div class="controls-divider"></div>
-      <!-- Browser selector -->
+      <!-- OS + Browser selector (hierarchy: OS above Browsers) -->
       <div class="browser-selector">
+        <span class="browser-selector-label">OS</span>
+        <label class="os-pill active" id="pill-os-mac" onclick="onOsChange('mac')">
+          <input type="radio" name="os-select" value="mac" checked />
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C9 3 6 6 6 9c0 4 3 8 6 12 3-4 6-8 6-12 0-3-3-6-6-6z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          macOS
+        </label>
+        <label class="os-pill" id="pill-os-win" onclick="onOsChange('windows')">
+          <input type="radio" name="os-select" value="windows" />
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+          Windows
+        </label>
+        <div class="controls-divider"></div>
         <span class="browser-selector-label">Browsers</span>
-        <label class="browser-pill checked" id="pill-chrome">
-          <input type="checkbox" id="browser-chrome" checked onchange="onBrowserChange(this,'pill-chrome')" />
-          <span class="browser-pill-icon">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
-          </span>
-          Chrome
-        </label>
-        <label class="browser-pill checked" id="pill-firefox">
-          <input type="checkbox" id="browser-firefox" checked onchange="onBrowserChange(this,'pill-firefox')" />
-          <span class="browser-pill-icon">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 6.22 17.9C16 21 14 21 12 21s-4 0-6.22-1.1A10 10 0 0 1 12 2z"/><path d="M12 7c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5z"/></svg>
-          </span>
-          Firefox
-        </label>
-        <label class="browser-pill checked" id="pill-safari">
-          <input type="checkbox" id="browser-safari" checked onchange="onBrowserChange(this,'pill-safari')" />
-          <span class="browser-pill-icon">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12,2 15.5,8.5 22,12 15.5,15.5 12,22 8.5,15.5 2,12 8.5,8.5"/></svg>
-          </span>
-          Safari
-        </label>
+
+        <!-- macOS browsers -->
+        <div id="browsers-mac" style="display:flex;align-items:center;gap:6px;">
+          <label class="browser-pill checked" id="pill-chrome">
+            <input type="checkbox" id="browser-chrome" checked onchange="onBrowserChange(this,'pill-chrome')" />
+            <span class="browser-pill-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
+            </span>
+            Chrome
+          </label>
+          <label class="browser-pill checked" id="pill-firefox">
+            <input type="checkbox" id="browser-firefox" checked onchange="onBrowserChange(this,'pill-firefox')" />
+            <span class="browser-pill-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 6.22 17.9C16 21 14 21 12 21s-4 0-6.22-1.1A10 10 0 0 1 12 2z"/><path d="M12 7c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5z"/></svg>
+            </span>
+            Firefox
+          </label>
+          <label class="browser-pill checked" id="pill-safari">
+            <input type="checkbox" id="browser-safari" checked onchange="onBrowserChange(this,'pill-safari')" />
+            <span class="browser-pill-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12,2 15.5,8.5 22,12 15.5,15.5 12,22 8.5,15.5 2,12 8.5,8.5"/></svg>
+            </span>
+            Safari
+          </label>
+        </div>
+
+        <!-- Windows browsers (hidden by default) -->
+        <div id="browsers-windows" style="display:none;align-items:center;gap:6px;">
+          <label class="browser-pill checked" id="pill-win-chrome">
+            <input type="checkbox" id="browser-win-chrome" checked onchange="onBrowserChange(this,'pill-win-chrome')" />
+            <span class="browser-pill-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="21.17" y1="8" x2="12" y2="8"/><line x1="3.95" y1="6.06" x2="8.54" y2="14"/><line x1="10.88" y1="21.94" x2="15.46" y2="14"/></svg>
+            </span>
+            Chrome
+          </label>
+          <label class="browser-pill checked" id="pill-win-edge">
+            <input type="checkbox" id="browser-win-edge" checked onchange="onBrowserChange(this,'pill-win-edge')" />
+            <span class="browser-pill-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0"/><path d="M3 12h13"/><path d="M12 3c-4 4-4 10 0 18"/></svg>
+            </span>
+            Edge
+          </label>
+          <label class="browser-pill checked" id="pill-win-firefox">
+            <input type="checkbox" id="browser-win-firefox" checked onchange="onBrowserChange(this,'pill-win-firefox')" />
+            <span class="browser-pill-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 6.22 17.9C16 21 14 21 12 21s-4 0-6.22-1.1A10 10 0 0 1 12 2z"/><path d="M12 7c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5z"/></svg>
+            </span>
+            Firefox
+          </label>
+        </div>
       </div>
       <div class="controls-divider"></div>
       <button class="btn btn-ghost btn-sm" id="run-selected-btn" style="display:none;" onclick="runSelected()">
@@ -1160,11 +1237,11 @@
 
     <!-- Tab bar -->
     <div class="tab-bar">
-      <button class="tab-btn active" id="tab-btn-output" onclick="switchTab('output')">
+      <button class="tab-btn active" id="tab-btn-output">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
         </svg>
-        Output
+        Test Case Execution
         <span class="tab-badge" id="output-count">0</span>
       </button>
 
@@ -1174,7 +1251,7 @@
     <div id="tab-output" class="active">
       <div class="pane-header">
         <div class="pane-header-left">
-          <span class="pane-title">Test Results</span>
+          <span class="pane-title">Test Case Execution</span>
         </div>
         <div class="pane-header-right">
           <button class="btn btn-ghost btn-sm" onclick="expandAllSuites()">Expand all</button>
@@ -1320,22 +1397,52 @@ let metaGroupEl = null;
 let metaGroupBodyEl = null;
 let metaLineCount = 0;
 let rawLineCount = 0;
-let currentTab = 'output';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Test catalogue — loaded from /api/catalogue at startup (parsed from spec files)
 // ─────────────────────────────────────────────────────────────────────────────
 let TEST_CATALOGUE = [];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Browser selector
+// OS selector + Browser selector
 // ─────────────────────────────────────────────────────────────────────────────
+let selectedOs = 'mac';    // 'mac' | 'windows'
+let actualOs   = 'mac';    // set from /api/platform on init
+
+function onOsChange(os) {
+  selectedOs = os;
+  document.getElementById('pill-os-mac').classList.toggle('active', os === 'mac');
+  document.getElementById('pill-os-win').classList.toggle('active', os === 'windows');
+  document.getElementById('browsers-mac').style.display     = os === 'mac'     ? 'flex' : 'none';
+  document.getElementById('browsers-windows').style.display = os === 'windows' ? 'flex' : 'none';
+  updateOsMismatchBanner();
+  updateGroupBadges();
+}
+
+function updateOsMismatchBanner() {
+  const banner  = document.getElementById('os-mismatch-banner');
+  const textEl  = document.getElementById('os-mismatch-text');
+  const names   = { mac: 'macOS', windows: 'Windows' };
+  if (selectedOs !== actualOs) {
+    textEl.textContent = `Warning: selected OS is ${names[selectedOs]} but this machine is ${names[actualOs]} — tests will fail on the wrong OS.`;
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
+}
+
 function onBrowserChange(cb, pillId) {
   document.getElementById(pillId).classList.toggle('checked', cb.checked);
   updateGroupBadges();
 }
 
 function getSelectedBrowsers() {
+  if (selectedOs === 'windows') {
+    const browsers = [];
+    if (document.getElementById('browser-win-chrome')?.checked)  browsers.push('windows-chrome');
+    if (document.getElementById('browser-win-edge')?.checked)    browsers.push('windows-edge');
+    if (document.getElementById('browser-win-firefox')?.checked) browsers.push('windows-firefox');
+    return browsers;
+  }
   const browsers = [];
   if (document.getElementById('browser-chrome')?.checked)  browsers.push('chrome');
   if (document.getElementById('browser-firefox')?.checked) browsers.push('firefox');
@@ -1386,19 +1493,9 @@ function toggleTheme() {
   const html = document.documentElement;
   const isDark = html.getAttribute('data-theme') === 'dark';
   html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  localStorage.setItem('theme', isDark ? 'light' : 'dark');
   document.getElementById('icon-sun').style.display  = isDark ? 'none' : '';
   document.getElementById('icon-moon').style.display = isDark ? '' : 'none';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tab switching
-// ─────────────────────────────────────────────────────────────────────────────
-function switchTab(name) {
-  ['output'].forEach(t => {
-    document.getElementById('tab-' + t).classList.toggle('active', t === name);
-    document.getElementById('tab-btn-' + t).classList.toggle('active', t === name);
-  });
-  currentTab = name;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1429,6 +1526,7 @@ function ensureSuiteBlock(suiteName) {
   const entry = { blockEl: block, bodyEl, countsEl: block.querySelector('.suite-counts'), tests: new Map() };
   suitesMap.set(suiteName, entry);
   document.getElementById('suite-overview').appendChild(block);
+  document.getElementById('output-empty').style.display = 'none';
   return entry;
 }
 
@@ -1527,7 +1625,7 @@ function updateTestsCount() {
 }
 
 function initTestsCatalogue() {
-  TEST_CATALOGUE.forEach(t => ensureTestEntry(t.suite, t.name));
+  TEST_CATALOGUE.forEach(t => ensureSuiteTestRow(t.suite, t.name));
   updateTestsCount();
 }
 
@@ -1561,31 +1659,57 @@ function updateFooter(status) {
 // SSE / init
 // ─────────────────────────────────────────────────────────────────────────────
 async function init() {
-  const { catalogue } = await (await fetch('/api/catalogue')).json();
-  TEST_CATALOGUE = catalogue;
+  // Detect actual OS from server and set initial OS pill state
+  try {
+    const { platform } = await (await fetch('/api/platform')).json();
+    actualOs = platform;
+    // Auto-select the OS radio to match the actual machine
+    selectedOs = platform;
+    if (platform === 'windows') {
+      onOsChange('windows');
+    } else {
+      onOsChange('mac');
+    }
+  } catch (_) { /* server older than this version — keep defaults */ }
+
+  try {
+    const { catalogue } = await (await fetch('/api/catalogue')).json();
+    TEST_CATALOGUE = catalogue ?? [];
+  } catch (_) { TEST_CATALOGUE = []; }
   initTestsCatalogue();
 
-  const { files } = await (await fetch('/api/tests')).json();
-  allFiles = files;
-  renderSidebar(files);
+  try {
+    const { files } = await (await fetch('/api/tests')).json();
+    allFiles = files ?? [];
+    renderSidebar(allFiles);
+  } catch (_) { renderSidebar([]); }
 
-  const { status, log } = await (await fetch('/api/status')).json();
-  setStatus(status);
-  log.forEach(line => ingestLine(line, line.startsWith('[stderr]') ? 'stderr' : 'stdout'));
+  try {
+    const { status, log } = await (await fetch('/api/status')).json();
+    setStatus(status ?? 'idle');
+    (log ?? []).forEach(line => ingestLine(line, line.startsWith('[stderr]') ? 'stderr' : 'stdout'));
+  } catch (_) { setStatus('idle'); }
 
-  es = new EventSource('/api/events');
-  es.addEventListener('status',    e => { const d = JSON.parse(e.data); setStatus(d.status); });
-  es.addEventListener('log',       e => { const d = JSON.parse(e.data); ingestLine(d.line, d.tag); });
-  es.addEventListener('run-files', e => {
-    const d = JSON.parse(e.data);
-    if (d.files && d.files.length > 0) {
-      d.files.forEach(f => {
-        const suiteName = fileToSuiteLabel(f);
-        // pre-populate suite block so it shows up before tests stream in
-        ensureSuiteBlock(suiteName);
-      });
-    }
-  });
+  function connectSSE() {
+    if (es) { try { es.close(); } catch (_) {} }
+    es = new EventSource('/api/events');
+    es.addEventListener('status',    e => { const d = JSON.parse(e.data); setStatus(d.status); });
+    es.addEventListener('log',       e => { const d = JSON.parse(e.data); ingestLine(d.line, d.tag); });
+    es.addEventListener('run-files', e => {
+      const d = JSON.parse(e.data);
+      if (d.files && d.files.length > 0) {
+        d.files.forEach(f => {
+          const suiteName = fileToSuiteLabel(f);
+          ensureSuiteBlock(suiteName);
+        });
+      }
+    });
+    es.onerror = () => {
+      es.close();
+      setTimeout(connectSSE, 3000);
+    };
+  }
+  connectSSE();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1706,8 +1830,10 @@ function updateSelSummary() {
 
 function updateGroupBadges() {
   const activeBrowsers = getSelectedBrowsers();
+  // Normalise: windows-chrome → chrome, windows-edge → edge, windows-firefox → firefox
+  const normBrowsers = activeBrowsers.map(b => b.replace('windows-', ''));
   document.querySelectorAll('.test-group-browser-badge').forEach(badge => {
-    badge.classList.toggle('active', activeBrowsers.includes(badge.dataset.browser));
+    badge.classList.toggle('active', normBrowsers.includes(badge.dataset.browser));
   });
 }
 
@@ -1719,6 +1845,7 @@ function toggleAll() {
   if (allSelected) allFiles.forEach(f => selectedFiles.delete(f));
   else             allFiles.forEach(f => selectedFiles.add(f));
   updateSelSummary();
+  updateGroupBadges();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2178,7 +2305,7 @@ async function startRun() {
   const resp = await fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files, grep: grep || undefined, browsers }),
+    body: JSON.stringify({ files, grep: grep || undefined, browsers, platform: selectedOs }),
   });
   if (!resp.ok) {
     const data = await resp.json().catch(() => ({}));
@@ -2201,7 +2328,6 @@ function exactGrepFor(suite, name) {
 
 async function runSingleTest(file, suiteName, testName) {
   clearAll();
-  switchTab('output');
   const browsers = getSelectedBrowsers();
   await fetch('/api/run', {
     method: 'POST',
@@ -2227,13 +2353,19 @@ function rerunFailed() {
   const failed = [...testMap.values()].filter(e => e.status === 'fail');
   if (!failed.length) return;
   const grep = failed.map(e => exactGrepFor(e.suite, e.name)).join('|');
+  const failedFiles = [...new Set(
+    failed.flatMap(e => {
+      const cat = TEST_CATALOGUE.find(t => t.suite === e.suite && t.name === e.name);
+      return cat ? [cat.file] : [];
+    })
+  )];
+  const files = failedFiles.length ? failedFiles : (allFiles.length ? [...selectedFiles] : []);
   const browsers = getSelectedBrowsers();
   clearAll();
-  switchTab('output');
   fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files: allFiles.length ? [...selectedFiles] : [], grep, browsers: browsers.length ? browsers : undefined }),
+    body: JSON.stringify({ files, grep, browsers: browsers.length ? browsers : undefined }),
   });
 }
 
@@ -2302,7 +2434,6 @@ async function runSelected() {
   const grep = unique.map(p => exactGrepFor(p.suite, p.name)).join('|');
   const browsers = getSelectedBrowsers();
   clearAll();
-  switchTab('output');
   await fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2335,6 +2466,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   init();
 });
+
+// Restore persisted theme on load
+(function() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'dark' || saved === 'light') {
+    document.documentElement.setAttribute('data-theme', saved);
+    const sun  = document.getElementById('icon-sun');
+    const moon = document.getElementById('icon-moon');
+    if (sun)  sun.style.display  = saved === 'dark' ? 'none' : '';
+    if (moon) moon.style.display = saved === 'dark' ? '' : 'none';
+  }
+})();
 </script>
 </body>
 </html>

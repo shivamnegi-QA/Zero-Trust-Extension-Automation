@@ -2,7 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
+
+const IS_WINDOWS = process.platform === 'win32';
 
 const app = express();
 app.use(cors());
@@ -20,6 +22,7 @@ const TESTS_DIR = path.join(ROOT, 'tests');
 let activeRun: ChildProcess | null = null;
 let runLog: string[] = [];
 let runStatus: 'idle' | 'running' | 'passed' | 'failed' = 'idle';
+let wasStopped = false;
 let sseClients: express.Response[] = [];
 
 function broadcast(event: string, data: unknown) {
@@ -63,7 +66,8 @@ app.get('/api/catalogue', (_req, res) => {
       if (entry.isDirectory()) {
         walk(path.join(dir, entry.name), relPath);
       } else if (entry.name.endsWith('.spec.ts') || entry.name.endsWith('.test.ts')) {
-        const src = fs.readFileSync(path.join(dir, entry.name), 'utf8');
+        let src: string;
+        try { src = fs.readFileSync(path.join(dir, entry.name), 'utf8'); } catch { continue; }
         const lines = src.split('\n');
         const describeMatch = src.match(/test\.describe\s*\(\s*['"`]([^'"`]+)['"`]/);
         const suite = describeMatch ? describeMatch[1] : relPath.replace(/\.(spec|test)\.ts$/, '');
@@ -124,8 +128,10 @@ app.get('/api/tests', (_req, res) => {
 });
 
 // GET /api/status
+// Only replay log when a run is in progress so a mid-run refresh catches up.
+// Completed/idle runs return an empty log — the output section starts clean on page load.
 app.get('/api/status', (_req, res) => {
-  res.json({ status: runStatus, log: runLog });
+  res.json({ status: runStatus, log: runStatus === 'running' ? runLog : [] });
 });
 
 // GET /api/screenshot?suite=…&name=… — finds the failure screenshot for a test
@@ -169,14 +175,23 @@ app.get('/api/events', (req, res) => {
   res.flushHeaders();
 
   res.write(`event: status\ndata: ${JSON.stringify({ status: runStatus })}\n\n`);
-  runLog.forEach((line) => {
-    res.write(`event: log\ndata: ${JSON.stringify({ line })}\n\n`);
-  });
+  // Only replay log to reconnecting clients during an active run; idle/finished runs
+  // start clean so the suite-overview is not overwritten by old output-rows.
+  if (runStatus === 'running') {
+    runLog.forEach((line) => {
+      res.write(`event: log\ndata: ${JSON.stringify({ line })}\n\n`);
+    });
+  }
 
   sseClients.push(res);
   req.on('close', () => {
     sseClients = sseClients.filter((c) => c !== res);
   });
+});
+
+// GET /api/platform — returns the actual OS this server is running on
+app.get('/api/platform', (_req, res) => {
+  res.json({ platform: process.platform === 'win32' ? 'windows' : 'mac' });
 });
 
 // POST /api/run
@@ -185,14 +200,31 @@ app.post('/api/run', (req, res) => {
     return res.status(409).json({ error: 'A run is already in progress' });
   }
 
-  const { files, grep, browsers } = req.body as { files?: unknown; grep?: unknown; browsers?: unknown };
+  const { files, grep, browsers, platform } = req.body as {
+    files?: unknown; grep?: unknown; browsers?: unknown; platform?: unknown;
+  };
+
+  // Platform guard: if the caller declared a target OS, verify it matches this machine
+  const actualPlatform = process.platform === 'win32' ? 'windows' : 'mac';
+  if (typeof platform === 'string' && platform !== actualPlatform) {
+    const names: Record<string, string> = { windows: 'Windows', mac: 'macOS' };
+    return res.status(400).json({
+      error: `Platform mismatch: tests are configured for ${names[platform] ?? platform} but this machine is ${names[actualPlatform]}.`,
+    });
+  }
 
   // Validate and sanitise browsers — only known values accepted
-  const KNOWN_BROWSERS = ['chrome', 'firefox', 'safari'];
+  const KNOWN_BROWSERS = [
+    'chrome', 'firefox', 'safari',
+    'windows-chrome', 'windows-edge', 'windows-firefox',
+  ];
   const BROWSER_TO_PROJECT: Record<string, string> = {
-    chrome:  'system-chrome',
-    firefox: 'system-firefox',
-    safari:  'system-safari',
+    chrome:            'system-chrome',
+    firefox:           'system-firefox',
+    safari:            'system-safari',
+    'windows-chrome':  'windows-chrome',
+    'windows-edge':    'windows-edge',
+    'windows-firefox': 'windows-firefox',
   };
 
   const activeBrowsers: string[] = Array.isArray(browsers)
@@ -273,7 +305,9 @@ app.post('/api/run', (req, res) => {
   activeRun.on('close', (code) => {
     if (stdoutBuf) { runLog.push(stdoutBuf); broadcast('log', { line: stdoutBuf, tag: 'stdout' }); }
     if (stderrBuf) { const e = `[stderr] ${stderrBuf}`; runLog.push(e); broadcast('log', { line: e, tag: 'stderr' }); }
-    runStatus = code === 0 ? 'passed' : 'failed';
+    const stopped = wasStopped;
+    wasStopped = false;
+    runStatus = stopped ? 'idle' : (code === 0 ? 'passed' : 'failed');
     broadcast('status', { status: runStatus });
     activeRun = null;
   });
@@ -288,10 +322,13 @@ app.post('/api/stop', (_req, res) => {
   }
   // Keep activeRun set until the process actually exits — prevents race with /api/run
   const proc = activeRun;
-  proc.kill('SIGTERM');
-  runStatus = 'idle';
-  broadcast('status', { status: 'idle' });
-  // activeRun will be nulled in the 'close' handler
+  wasStopped = true;
+  if (IS_WINDOWS) {
+    spawnSync('taskkill', ['/PID', String(proc.pid), '/F', '/T'], { stdio: 'ignore', timeout: 5_000 });
+  } else {
+    proc.kill('SIGTERM');
+  }
+  // runStatus and broadcast are handled in the 'close' handler once the process actually exits
   res.json({ stopped: true });
 });
 

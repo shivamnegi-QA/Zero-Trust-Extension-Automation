@@ -4,6 +4,8 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 const isCI = !!process.env.CI;
+const isMac = process.platform === 'darwin';
+const isWindows = process.platform === 'win32';
 
 export default defineConfig({
   testDir: './tests',
@@ -22,21 +24,37 @@ export default defineConfig({
   },
 
   projects: [
-    {
-      name: 'system-chrome',
-      // All launch logic is in fixtures/extension.ts (Chrome branch).
-      testIgnore: ['**/ui/**', '**/*firefox*', '**/*safari*', '**/01-extension*', '**/02-firefox*', '**/03-safari*'],
-      testMatch: ['**/extension-load-and-login.spec.ts', '**/02-dashboard-login.spec.ts'],
-    },
-    {
-      name: 'system-firefox',
-      // All launch logic is in fixtures/extension.ts (Firefox branch).
-      testMatch: ['**/extension-load-and-login.spec.ts'],
-    },
-    {
-      name: 'system-safari',
-      // All launch logic is in fixtures/extension.ts (Safari branch).
-      testMatch: ['**/extension-load-and-login.spec.ts'],
-    },
+    // ── macOS projects (skipped on Windows) ────────────────────────────────
+    ...(!isWindows ? [
+      {
+        name: 'system-chrome',
+        testIgnore: ['**/ui/**', '**/*firefox*', '**/*safari*', '**/01-extension*', '**/02-firefox*', '**/03-safari*'],
+        testMatch: ['**/extension-load-and-login.spec.ts', '**/02-dashboard-login.spec.ts'],
+      },
+      {
+        name: 'system-firefox',
+        testMatch: ['**/extension-load-and-login.spec.ts'],
+      },
+      {
+        name: 'system-safari',
+        testMatch: ['**/extension-load-and-login.spec.ts'],
+      },
+    ] : []),
+
+    // ── Windows projects (skipped on macOS) ────────────────────────────────
+    ...(!isMac ? [
+      {
+        name: 'windows-chrome',
+        testMatch: ['**/extension-load-and-login.spec.ts', '**/02-dashboard-login.spec.ts'],
+      },
+      {
+        name: 'windows-edge',
+        testMatch: ['**/extension-load-and-login.spec.ts'],
+      },
+      {
+        name: 'windows-firefox',
+        testMatch: ['**/extension-load-and-login.spec.ts'],
+      },
+    ] : []),
   ],
 });

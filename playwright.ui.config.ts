@@ -11,7 +11,7 @@ export default defineConfig({
   globalSetup: './scripts/ui-server-setup.ts',
   globalTeardown: './scripts/ui-server-teardown.ts',
   use: {
-    baseURL: 'http://localhost:14321',
+    baseURL: 'http://localhost:4321',
   },
   projects: [{ name: 'ui-server' }],
 });

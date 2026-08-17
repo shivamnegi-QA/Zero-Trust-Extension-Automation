@@ -1,7 +1,9 @@
 # ZT Extension Policy Regression — Setup Guide
 
 Cross-platform Playwright test suite for the Zero Trust Browser (ZTB) extension.
-Automates extension load, popup interaction, and dashboard login across Chrome, Firefox, and Safari (macOS) / Chrome, Edge, and Firefox (Windows).
+Runs on **macOS** (Chrome, Firefox, Safari) and **Windows** (Chrome, Edge, Firefox).
+
+`playwright.config.ts` automatically includes only the projects for the current OS — no manual changes needed when switching between machines.
 
 ---
 
@@ -9,301 +11,370 @@ Automates extension load, popup interaction, and dashboard login across Chrome, 
 
 ```
 fixtures/
-  extension.ts        # Unified worker-scoped fixture — PopupSession interface
-  base.ts             # Chrome CDP fixture (used by 02-dashboard-login.spec.ts)
-  firefox.ts          # Firefox geckodriver fixture
-  safari.ts           # Safari safaridriver fixture
+  base.ts             # Worker-scoped CDP fixture for 02-dashboard-login.spec.ts
+  extension.ts        # Unified worker-scoped fixture (PopupSession) for all 6 browser projects
+  firefox.ts          # Firefox popup helper used by extension.ts
 
 tests/
-  extension-load-and-login.spec.ts   # Main spec — runs on all 3 browser projects
-  02-dashboard-login.spec.ts         # Chrome-only dashboard login spec
+  extension-load-and-login.spec.ts   # Extension load + popup + login — runs on all browser projects
+  02-dashboard-login.spec.ts         # Dashboard login flow — runs on Chrome projects only
   helpers/
-    webdriver-login.ts               # Shared login helpers + isConnectedState()
+    webdriver-login.ts               # Shared login helper (webdriverLogin, isConnectedState)
 
 utils/
-  system-chrome.ts    # ChromeDriver + NSOpenPanel automation (macOS)
-  system-firefox.ts   # geckodriver + GdSession WebDriver client
-  system-safari.ts    # safaridriver + SdSession + AX popup automation (macOS)
+  system-chrome.ts          # macOS only: ChromeDriver + Swift AX + AppleScript NSOpenPanel
+  system-safari.ts          # macOS only: safaridriver + osascript AX popup automation
+  system-firefox.ts         # Cross-platform: geckodriver + GdSession (handles both macOS and Windows)
+  system-windows-chrome.ts  # Windows only: ChromeDriver/MSEdgeDriver + PowerShell file-picker
+  system-windows-edge.ts    # Windows only: MSEdgeDriver wrapper (delegates to windows-chrome)
+  platform.ts               # OS-aware binary paths (auto-detects platform, reads .env overrides)
+  shared.ts                 # WdClient HTTP wrapper, sleep, getFreePort, extensionIdFromManifestKey
 
-playwright.config.ts  # Defines system-chrome / system-firefox / system-safari projects
+playwright.config.ts  # Defines all 6 projects; macOS projects excluded on Windows, vice versa
 ```
+
+### Projects per OS
+
+| Project | OS | Browser | Spec files |
+|---|---|---|---|
+| `system-chrome` | macOS | Chrome via ChromeDriver + NSOpenPanel AX | both |
+| `system-firefox` | macOS | Firefox via geckodriver | extension-load-and-login |
+| `system-safari` | macOS | Safari via safaridriver + osascript AX | extension-load-and-login |
+| `windows-chrome` | Windows | Chrome via ChromeDriver + PowerShell | both |
+| `windows-edge` | Windows | Edge via MSEdgeDriver + PowerShell | extension-load-and-login |
+| `windows-firefox` | Windows | Firefox via geckodriver | extension-load-and-login |
 
 ---
 
-## macOS prerequisites
+## Making changes — where things live
 
-### 1. Node.js
+This is the most important section for cross-platform development. All macOS and Windows code lives in the **same repo** — you edit here on Mac and the Windows changes stay in the Windows-only files.
+
+### Test logic (assertions, page flows)
+Edit files in `tests/` and `tests/helpers/`. These are fully cross-platform — no platform conditionals.
+
+```
+tests/extension-load-and-login.spec.ts   ← edit for all browsers
+tests/02-dashboard-login.spec.ts         ← edit for Chrome dashboard tests
+tests/helpers/webdriver-login.ts         ← edit shared login logic
+```
+
+### Popup interaction changes (what the fixture exposes to tests)
+Edit `fixtures/extension.ts`. It has separate branches per project name. Changing the `PopupSession` interface or behavior means updating the relevant branch:
+
+| If you're changing... | Update this branch in extension.ts |
+|---|---|
+| Chrome popup (macOS) | `system-chrome` branch |
+| Chrome popup (Windows) | `windows-chrome` and `windows-edge` branches |
+| Firefox popup | `system-firefox` / `windows-firefox` branches (shared helper in `fixtures/firefox.ts`) |
+| Safari popup | `system-safari` branch |
+
+### Chrome extension loading (macOS)
+Edit `utils/system-chrome.ts`.
+
+- Entry point: `launchSystemChromeWithExtension(opts)`
+- File picker: Swift AX helper compiled to `/tmp/open-goto-folder` + osascript `System Events`
+- Chrome PID: read from ChromeDriver session capabilities (`sessionInfo.value.processId`), with `pgrep -n` as fallback
+- **Kill order (macOS): Chrome PID first (SIGTERM), then ChromeDriver (SIGTERM)**
+  - On macOS, ChromeDriver and Chrome are separate processes with no parent–child relationship for SIGTERM propagation. Killing ChromeDriver alone leaves Chrome running.
+- Returns `{ cdpEndpoint, extensionId, teardown }` — must stay in sync with Windows equivalent
+
+### Chrome extension loading (Windows)
+Edit `utils/system-windows-chrome.ts`.
+
+- Entry point: `launchWindowsBrowserWithExtension(opts)` — also handles Edge via `capsKey`
+- File picker: PowerShell inline C# (`WM_SETTEXT` + `BM_CLICK` on `#32770` dialog)
+- Browser PID: `Get-NetTCPConnection -LocalPort <debugPort>` (OS TCP lookup — ChromeDriver doesn't expose PID)
+- **Kill order (Windows): ChromeDriver `/F /T` first (kills full process tree), then browser PID backup**
+  - On Windows, ChromeDriver is the parent of Chrome. `taskkill /T` on ChromeDriver terminates Chrome and all its sub-processes atomically. Killing Chrome first would orphan renderers/GPU before the tree-kill.
+- Returns `{ cdpEndpoint, extensionId, teardown }` — must stay in sync with macOS equivalent
+
+### Firefox extension loading (both platforms)
+Edit `utils/system-firefox.ts`. It handles both macOS and Windows via `IS_WINDOWS`.
+
+- Extension loading: `POST /session/{id}/moz/addon/install` — no file picker needed on either platform
+- Kill on macOS: `process.kill(pid, 'SIGTERM')`
+- Kill on Windows: `taskkill /F /T`
+
+### Safari extension loading (macOS only)
+Edit `utils/system-safari.ts`.
+
+- Installs via `.app` bundle (`open -W appPath`)
+- Enables extension via Safari Preferences > Extensions (osascript AX)
+- Enables Remote Automation via Safari Develop menu (osascript AX)
+- Popup interaction is entirely via osascript (`openAndReadSafariPopup`, `clickInSafariPopup`, etc.) — no CDP or Playwright
+
+### Dashboard test fixture (Chrome-only base fixture)
+Edit `fixtures/base.ts`.
+
+- Has an inline `if (IS_WINDOWS)` branch — update BOTH branches if changing how the browser context is managed
+- Worker-scoped: one browser session per project, shared across all serial tests
+
+### Platform binary paths
+Edit `utils/platform.ts` only if adding a new binary or changing auto-detection logic. For per-machine overrides, use `.env` instead.
+
+---
+
+## macOS setup
+
+### 1. Node.js 20+
 ```bash
-node -v   # 20+ required
+node -v   # must be 20 or higher
 ```
 
 ### 2. System browsers
-- Google Chrome: `/Applications/Google Chrome.app`
-- Firefox: `/Applications/Firefox.app`
-- Safari: built-in
+- **Google Chrome**: `/Applications/Google Chrome.app`
+- **Firefox**: `/Applications/Firefox.app`
+- **Safari**: built-in (no install needed)
 
 ### 3. Browser drivers
 ```bash
-brew install chromedriver     # Must match installed Chrome major version
+brew install chromedriver     # must match installed Chrome major version
 brew install geckodriver       # Firefox WebDriver
-# Safari: safaridriver is bundled with macOS — enable once:
-safaridriver --enable
+safaridriver --enable          # enable Safari WebDriver (one-time, requires sudo)
 ```
 
-### 4. Accessibility permission
-The Chrome extension loader uses AppleScript + Swift AX to automate the NSOpenPanel file picker.
-
-Go to **System Settings → Privacy & Security → Accessibility** and add the app running the tests (Terminal.app, VS Code.app, or iTerm.app).
-
-### 5. Screen Recording permission (for video traces)
-Go to **System Settings → Privacy & Security → Screen Recording** and add the same app.
-
-### 6. Install dependencies
+Verify Chrome + ChromeDriver versions match:
 ```bash
+chromedriver --version
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version
+```
+
+### 4. Accessibility permission (required for Chrome and Safari)
+Both `system-chrome` and `system-safari` use osascript + the AX API to automate native UI (NSOpenPanel, toolbar buttons, popup text). This requires Accessibility access.
+
+**System Settings → Privacy & Security → Accessibility** → add the app you run tests from:
+- `Terminal.app`
+- `Visual Studio Code.app` (for IDE runs)
+- `iTerm.app`
+- Or the shell binary directly (e.g. `/bin/zsh`)
+
+Without this, Chrome extension loading and Safari popup interaction will fail or hang.
+
+### 5. Install dependencies
+```bash
+cd Zero-Trust-Extension-Automation
 npm install
 ```
 
-### 7. Environment variables
-Copy `.env.example` to `.env` and fill in:
-
+### 6. Environment variables
 ```bash
 cp .env.example .env
 ```
+
+Edit `.env`:
 
 | Variable | Description |
 |---|---|
 | `EXTENSION_LOGIN_EMAIL` | Dashboard login email |
 | `EXTENSION_LOGIN_PASSWORD` | Dashboard login password |
-| `SQRX_BASE_URL` | Tenant URL, e.g. `https://automation.in.onsquarex.com/` |
+| `SQRX_BASE_URL` | Tenant base URL, e.g. `https://automation.in.onsquarex.com/` |
 | `EXTENSION_PATH` | Path to unpacked Chrome extension (relative to project root) |
 | `FIREFOX_EXTENSION_PATH` | Path to unpacked Firefox extension build |
-| `EXTENSION_DEPLOYMENT_PAGE_URL` | GPO deployment settings page URL (for auto-download) |
+| `SAFARI_EXTENSION_DIR` | Path to extracted Safari extension bundle directory |
 
-### 8. Extension builds
-Place unpacked extension files at the paths set in `.env`:
+macOS binary paths (only needed if not at the default locations):
+```env
+# Optional — defaults work for standard Homebrew + Applications installs
+CHROME_BINARY=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+CHROMEDRIVER=/opt/homebrew/bin/chromedriver
+FIREFOX_BINARY=/Applications/Firefox.app/Contents/MacOS/firefox
+GECKODRIVER=/opt/homebrew/bin/geckodriver
+```
+
+### 7. Extension builds
+Default layout expected by the fixtures:
+
 ```
 extension builds/
-  current/             # Chrome unpacked (EXTENSION_PATH)
-  firefox-1.4.3/build/ # Firefox unpacked (FIREFOX_EXTENSION_PATH)
-  safari-1.4.3/        # Safari app bundle dir (SAFARI_EXTENSION_DIR)
+  extension-unpacked/       # Chrome + Edge unpacked (EXTENSION_PATH default on macOS)
+    manifest.json
+    ...
+  firefox-1.4.3/
+    build/                  # Firefox unpacked (FIREFOX_EXTENSION_PATH default on macOS)
+      manifest.json
+      ...
+  safari-1.4.3/             # Safari: must contain Debug/Zero Trust Browser Extension.app
+    Debug/
+      Zero Trust Browser Extension.app
+  screenshots/              # Created automatically; test screenshots saved here
 ```
 
-Or use the download script to fetch from the deployment page:
+Or use the download script:
 ```bash
 npm run download-extension
 ```
 
----
-
-## Running tests on macOS
-
+### 8. Run tests on macOS
 ```bash
-# All browsers
-npx playwright test --project=system-chrome --project=system-firefox --project=system-safari
+# All macOS projects (auto-detected by playwright.config.ts)
+npx playwright test
 
-# Single browser
+# Single project
 npx playwright test --project=system-chrome
 npx playwright test --project=system-firefox
 npx playwright test --project=system-safari
 
-# Open the test UI dashboard
-npm run ui
-# then open http://localhost:3000 in a browser
+# Single spec
+npx playwright test tests/extension-load-and-login.spec.ts --project=system-chrome
+npx playwright test tests/02-dashboard-login.spec.ts --project=system-chrome
+
+# HTML report
+npx playwright show-report reports/html
 ```
 
 ---
 
 ## Windows setup
 
-Windows requires different browser drivers and paths. The Safari project does not run on Windows.
-
 ### 1. Prerequisites
-- Node.js 20+ (download from nodejs.org)
-- Git for Windows (includes bash — used for npm scripts)
-- PowerShell 7+ or Windows Terminal recommended
+- Node.js 20+ from nodejs.org
+- Git for Windows (includes bash shell used by npm scripts)
 
-### 2. Install browsers
-- **Chrome**: standard installer from google.com/chrome
+### 2. Browsers
+- **Chrome**: standard installer
 - **Edge**: pre-installed on Windows 10/11
-- **Firefox**: standard installer from mozilla.org
+- **Firefox**: standard installer
 
-### 3. Install WebDriver binaries
+### 3. Browser drivers
+All three drivers must match the installed browser versions.
 
-**ChromeDriver** (must match installed Chrome version):
+**ChromeDriver** (must match Chrome major version):
 ```powershell
-# Option A — via npm (auto-matched)
-npm install -g chromedriver
-
-# Option B — manual download from https://chromedriver.chromium.org
-# Place chromedriver.exe somewhere on PATH
+# Check Chrome: Help > About in Chrome
+# Download matching ChromeDriver: https://chromedriver.chromium.org/downloads
+# Place chromedriver.exe on PATH or set CHROMEDRIVER in .env
 ```
 
-**EdgeDriver** (msedgedriver):
+**MSEdgeDriver**:
 ```powershell
-# Download from https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/
-# Match the exact Edge version: edge://settings/help
-# Place msedgedriver.exe on PATH
+# Check Edge version: edge://settings/help
+# Download: https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/
+# Place msedgedriver.exe on PATH or set EDGEDRIVER in .env
 ```
 
 **geckodriver** (Firefox):
 ```powershell
-# Download from https://github.com/mozilla/geckodriver/releases
-# Place geckodriver.exe on PATH
-winget install Mozilla.Geckodriver   # or via winget
+# global-setup.ts downloads geckodriver automatically via npm package
+# Or install manually: winget install Mozilla.Geckodriver
 ```
 
-### 4. Windows-specific environment variables
-Add to `.env` (in addition to the common ones above):
-
+### 4. Environment variables
+Same common variables as macOS, plus Windows binary paths:
 ```env
-# Windows browser binary paths (if not on PATH)
 CHROME_BINARY=C:\Program Files\Google\Chrome\Application\chrome.exe
 EDGE_BINARY=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
 FIREFOX_BINARY=C:\Program Files\Mozilla Firefox\firefox.exe
-
 CHROMEDRIVER=chromedriver.exe
 EDGEDRIVER=msedgedriver.exe
 GECKODRIVER=geckodriver.exe
 ```
 
-### 5. Windows Chrome extension loading
-On macOS the extension is loaded via NSOpenPanel (AX automation).
-On Windows, Chrome supports `--load-extension` only in **Chromium** builds — official Chrome blocks it.
+### 5. Extension builds
+Chrome and Edge use `chrome-1.4.3/build` on Windows:
 
-**Recommended approach for Windows:** use ChromeDriver's capability to pass the extension as a base64-encoded CRX, or use the `--load-extension` flag with a **system Chrome** launched via a custom policy:
-
-```json
-// Place at: C:\Windows\System32\GroupPolicy\Machine\Registry.pol
-// OR add via registry:
-// HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist
-// Value: "1" = "<extension-id>;<update-url>"
+```
+extension builds/
+  chrome-1.4.3/
+    build/                  # Chrome + Edge unpacked (EXTENSION_PATH default on Windows)
+      manifest.json
+      ...
+  firefox-1.4.3/            # Firefox unpacked (FIREFOX_EXTENSION_PATH default on Windows)
+    manifest.json
+    ...
+  screenshots/
 ```
 
-Alternatively, load via ChromeDriver `addExtensions` capability (packed .crx):
-```typescript
-// In the Chrome fixture for Windows, pass the packed extension:
-'goog:chromeOptions': {
-  extensions: [fs.readFileSync('extension builds/extension.crx').toString('base64')]
-}
-```
+ZIP files in `builds/` are auto-extracted by `global-setup.ts` on each run.
 
-### 6. Adding Windows projects to playwright.config.ts
+### 6. Windows extension loading
+Chrome/Edge load the extension through the Extensions developer UI:
+1. ChromeDriver/MSEdgeDriver navigates to `chrome://extensions/` or `edge://extensions/`
+2. Developer mode is enabled (Chrome: via privileged JS API; Edge: via UI shadow DOM toggle)
+3. "Load unpacked" is clicked — the browser opens a Windows folder picker
+4. A PowerShell script fills the picker path using `WM_SETTEXT` + `BM_CLICK` (no window focus required)
 
-Add these projects to the `projects` array:
+No GPO, CRX files, or registry changes needed. All handled in `utils/system-windows-chrome.ts`.
 
-```typescript
-{
-  name: 'windows-chrome',
-  testMatch: ['**/extension-load-and-login.spec.ts', '**/02-dashboard-login.spec.ts'],
-},
-{
-  name: 'windows-edge',
-  testMatch: ['**/extension-load-and-login.spec.ts'],
-},
-{
-  name: 'windows-firefox',
-  testMatch: ['**/extension-load-and-login.spec.ts'],
-},
-```
-
-### 7. Adding Windows fixtures to fixtures/extension.ts
-
-The `extSession` fixture branches on `testInfo.project.name`. Add new branches:
-
-```typescript
-} else if (project === 'windows-chrome') {
-  // Launch Chrome via ChromeDriver with --load-extension or packed CRX
-  // Mirror the system-chrome branch but:
-  //   - Use Windows binary paths from env
-  //   - Replace fillNativeFilePicker with CRX/policy-based loading
-  //   - No Swift AX helper needed
-
-} else if (project === 'windows-edge') {
-  // Same as windows-chrome but use msedgedriver + Edge binary
-  // Edge is Chromium-based: same CDP connection approach works
-
-} else if (project === 'windows-firefox') {
-  // Same as system-firefox — geckodriver approach is cross-platform
-  // Only change: binary path from env var
-```
-
-### 8. Cross-platform binary path handling
-
-The current `system-chrome.ts` hardcodes macOS paths. For Windows, create a `utils/system-windows-chrome.ts` (or add platform branching):
-
-```typescript
-// utils/platform.ts
-export const CHROME_BINARY = process.platform === 'win32'
-  ? (process.env.CHROME_BINARY ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
-  : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-
-export const CHROMEDRIVER = process.platform === 'win32'
-  ? (process.env.CHROMEDRIVER ?? 'chromedriver.exe')
-  : '/opt/homebrew/bin/chromedriver';
-
-export const FIREFOX_BINARY = process.platform === 'win32'
-  ? (process.env.FIREFOX_BINARY ?? 'C:\\Program Files\\Mozilla Firefox\\firefox.exe')
-  : '/Applications/Firefox.app/Contents/MacOS/firefox';
-
-export const GECKODRIVER = process.platform === 'win32'
-  ? (process.env.GECKODRIVER ?? 'geckodriver.exe')
-  : '/opt/homebrew/bin/geckodriver';
-```
-
-### 9. Windows notes on extension loading
-
-| Browser | Windows loading method |
-|---|---|
-| Chrome | Packed CRX via ChromeDriver `extensions` capability, or enterprise policy |
-| Edge | Same as Chrome (Chromium-based) — use `ms:edgeOptions` instead of `goog:chromeOptions` |
-| Firefox | `moz/addon/install` via geckodriver — identical to macOS, no changes needed |
-
-Edge-specific ChromeDriver capability:
-```typescript
-'ms:edgeOptions': {
-  binary: EDGE_BINARY,
-  args: ['--user-data-dir=...', '--remote-debugging-port=0'],
-  extensions: [base64EncodedCrx],
-}
+### 7. Run tests on Windows
+```powershell
+npx playwright test                                      # all Windows projects
+npx playwright test --project=windows-chrome
+npx playwright test --project=windows-edge
+npx playwright test --project=windows-firefox
+npx playwright test tests/02-dashboard-login.spec.ts --project=windows-chrome
+npx playwright show-report reports/html
 ```
 
 ---
 
-## Shared test architecture
+## Test architecture
 
-The test suite uses **worker-scoped fixtures** — each browser project launches its browser **once** for the entire test suite, then runs all tests in that single session. A `beforeEach` hook calls `clearAuth()` to reset cookies before every test.
+### Serial test chains with shared browser session
+
+Each describe block uses `test.describe.serial` with a `beforeAll` that clears auth once. Tests chain — each continues from where the previous one left off:
 
 ```
-Worker starts → browser launches once
-  beforeEach → clearAuth() clears cookies/storage
-  test 1: Extension loads
-  beforeEach → clearAuth()
-  test 2: Extension popup opens
-  beforeEach → clearAuth()
-  test 3: Unauthenticated state
-  beforeEach → clearAuth()
-  test 4: Connected state after login
-Worker teardown → browser closed
+Worker starts → browser + extension loaded once (worker-scoped fixture)
+  beforeAll  → clearAuth() resets cookies/storage once for the whole suite
+  Test 1: Extension loads                     (verifies extensionKey is present)
+  Test 2: Extension popup opens               (continues from loaded-extension state)
+  Test 3: Popup shows unauthenticated state   (continues from open-popup state)
+  Test 4: Popup shows connected state         (logs into dashboard, verifies extension syncs)
+Worker teardown → browser closed, all processes killed
 ```
 
-The `PopupSession` interface abstracts all browser differences:
+Running a single test (e.g. only Test 4) also works — `beforeAll` clears auth and Test 4 logs in itself.
 
-| Method | Chrome | Firefox | Safari |
-|---|---|---|---|
-| `openPopup()` | CDP chrome-extension:// page | geckodriver → moz-extension:// tab | osascript AX click |
-| `closePopup()` | close Playwright page | geckodriver close window | osascript Escape key |
-| `navigate(url)` | Playwright page.goto | geckodriver /url | safaridriver /url |
-| `sendKeys(id, text)` | Playwright locator.fill | WebDriver /element/value | WebDriver /element/value |
-| `clearAuth()` | clearCookies + chrome.storage | deleteAllCookies | deleteAllCookies |
+### One browser session per project per spec file
+
+Each `project × spec file` combination gets exactly one worker. The worker opens the browser once, runs all serial tests, then closes. Session cookies persist across the chain.
+
+### Retry behaviour with serial mode
+
+If any test fails, `describe.serial` skips the remaining tests. Playwright retries from Test 1, which re-runs `beforeAll` and rebuilds state cleanly.
 
 ---
 
-## Gitignore additions before pushing
+## Session teardown — platform differences
 
-Add to `.gitignore`:
+All browser processes are explicitly killed in a `finally` block.
+
+### macOS Chrome (`system-chrome`, `base.ts`)
+Kill order: **Chrome PID first, then ChromeDriver**
+
+```
+1. process.kill(chromePid, 'SIGTERM')   ← Chrome browser
+2. driver.kill('SIGTERM')               ← ChromeDriver process
+```
+
+On macOS, ChromeDriver spawns Chrome as a completely separate process. SIGTERM to ChromeDriver does NOT propagate to Chrome. Chrome must be killed by its own PID.
+
+Chrome PID is obtained from ChromeDriver session capabilities (`sessionInfo.value.processId`), with `pgrep -n` as a fallback.
+
+### Windows Chrome/Edge (`windows-chrome`, `windows-edge`, `base.ts`)
+Kill order: **ChromeDriver `/T` first, then browser PID as backup**
+
+```
+1. taskkill /PID <driverPid> /F /T      ← kills driver + entire process tree (Chrome + renderers/GPU)
+2. taskkill /PID <browserPid> /F /T     ← backup: browser by its own PID
+```
+
+On Windows, ChromeDriver is the parent of Chrome. `/T` kills the full tree atomically. Killing Chrome first would orphan its child processes (renderers, GPU process, crashpad) before the tree-kill ran.
+
+Browser PID is obtained via `Get-NetTCPConnection -LocalPort <debugPort>` (ChromeDriver does not expose the browser PID in session capabilities on Windows).
+
+### Firefox (both platforms)
+Kill order: **GeckoDriver first, then Firefox PID as backup**
+
+On both platforms, GeckoDriver is the parent of Firefox. The kill order mirrors Windows Chrome: driver first (with `/T` on Windows, `SIGTERM` on macOS), then Firefox PID as backup.
+
+---
+
+## Gitignore
+
 ```
 .env
-.ca-bundle.pem
 extension builds/
 node_modules/
 dist/
@@ -312,18 +383,27 @@ test-results/
 *.png
 ```
 
-The `.env` and `extension builds/` directories contain credentials and binary artifacts — never commit them.
-
 ---
 
-## Quick start checklist (Windows)
+## Quick-start checklist
 
+### macOS
+- [ ] Node.js 20+ installed
+- [ ] Chrome, Firefox, Safari installed
+- [ ] `chromedriver` and `geckodriver` installed via Homebrew and version-matched
+- [ ] `safaridriver --enable` run once
+- [ ] Accessibility permission granted to Terminal / VS Code / iTerm
+- [ ] `npm install` run in project root
+- [ ] `.env` created from `.env.example` with credentials and paths
+- [ ] Extension builds placed under `extension builds/`
+- [ ] `npx playwright test` — should run `system-chrome`, `system-firefox`, `system-safari`
+
+### Windows
 - [ ] Node.js 20+ installed
 - [ ] Chrome, Edge, Firefox installed
-- [ ] chromedriver, msedgedriver, geckodriver on PATH and version-matched
+- [ ] `chromedriver.exe` and `msedgedriver.exe` downloaded and version-matched
+- [ ] `geckodriver.exe` on PATH (or let global-setup auto-download)
 - [ ] `npm install` run in project root
-- [ ] `.env` created from `.env.example` with correct credentials and paths
-- [ ] Extension CRX or unpacked build available at `EXTENSION_PATH`
-- [ ] Windows projects added to `playwright.config.ts`
-- [ ] Windows fixture branches added to `fixtures/extension.ts`
-- [ ] Platform path constants added to `utils/system-chrome.ts` and `utils/system-firefox.ts`
+- [ ] `.env` created from `.env.example` with credentials and paths
+- [ ] Extension ZIPs in `builds/` (or pre-extracted under `extension builds/`)
+- [ ] `npx playwright test` — should run `windows-chrome`, `windows-edge`, `windows-firefox`

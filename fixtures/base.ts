@@ -1,62 +1,88 @@
 import { test as base, chromium, BrowserContext, Page } from '@playwright/test';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
-import { launchSystemChromeWithExtension } from '../utils/system-chrome';
 
 dotenv.config();
 
+const IS_WINDOWS = process.platform === 'win32';
+
 const EXTENSION_PATH = process.env.EXTENSION_PATH
   ? path.resolve(process.env.EXTENSION_PATH)
-  : path.resolve('extension builds/extension-unpacked');
+  : path.resolve(IS_WINDOWS ? 'extension builds/chrome-1.4.3/build' : 'extension builds/extension-unpacked');
 
-const PROFILE_PATH = path.resolve('extension builds/ztb-test-profile');
-
-type ExtensionFixtures = {
-  context: BrowserContext;
+// _launchedContext is worker-scoped: one browser session per project run.
+// context (test-scoped) returns the same BrowserContext each time so state
+// (cookies, storage) persists across tests within describe.serial blocks.
+type TestFixtures = {
   page: Page;
   extensionId: string;
 };
 
-export const test = base.extend<ExtensionFixtures>({
-  context: async ({}, use) => {
-    // Use a unique temp profile per test so concurrent/sequential runs don't collide
+type WorkerFixtures = {
+  _launchedContext: BrowserContext;
+};
+
+export const test = base.extend<TestFixtures, WorkerFixtures>({
+  _launchedContext: [async ({}, use) => {
     const { mkdtempSync } = await import('fs');
     const { tmpdir } = await import('os');
     const tmpProfile = mkdtempSync(path.join(tmpdir(), 'ztb-test-'));
 
-    const { cdpEndpoint, teardown } = await launchSystemChromeWithExtension({
-      extensionPath: EXTENSION_PATH,
-      profilePath: tmpProfile,
-      tag: '[fixture]',
-    });
+    let cdpEndpoint: string;
+    let teardown: () => Promise<void>;
 
-    // cdpEndpoint is a ws:// URL from Chrome's /json/version.
-    // connectOverCDP with a WS URL works on Chrome 151 / macOS 26;
-    // the HTTP form returns empty JSON and fails.
-    const browser = await chromium.connectOverCDP(cdpEndpoint);
-    const context = browser.contexts()[0] ?? await browser.newContext();
+    if (IS_WINDOWS) {
+      const { launchWindowsBrowserWithExtension } = await import('../utils/system-windows-chrome');
+      ({ cdpEndpoint, teardown } = await launchWindowsBrowserWithExtension({
+        extensionPath: EXTENSION_PATH,
+        profilePath: tmpProfile,
+        tag: '[fixture:win-chrome]',
+      }));
+    } else {
+      const { launchSystemChromeWithExtension } = await import('../utils/system-chrome');
+      ({ cdpEndpoint, teardown } = await launchSystemChromeWithExtension({
+        extensionPath: EXTENSION_PATH,
+        profilePath: tmpProfile,
+        tag: '[fixture]',
+      }));
+    }
 
-    await use(context);
+    // Browser is now running — wrap in try/finally so teardown always fires
+    // even if connectOverCDP or newContext throws before use() is called.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let browser: any = null;
+    try {
+      browser = await chromium.connectOverCDP(cdpEndpoint);
+      const ctx = browser.contexts()[0] ?? await browser.newContext();
+      await use(ctx);
+    } finally {
+      // Kill processes BEFORE browser.close(): browser.close() starts Chrome's
+      // graceful shutdown which can reparent sub-processes before the tree-kill runs.
+      await teardown();
+      await browser?.close().catch(() => {});
+      const { rmSync } = await import('fs');
+      await new Promise(r => setTimeout(r, 1500));
+      try { rmSync(tmpProfile, { recursive: true, force: true }); } catch { /* Chrome may still hold locks */ }
+    }
+  }, { scope: 'worker' }],
 
-    // browser.close() signals teardown but Chrome is actually killed by teardown() below.
-    await browser.close().catch(() => {});
-    await teardown();
-
-    // Clean up temp profile after Chrome exits
-    const { rmSync } = await import('fs');
-    rmSync(tmpProfile, { recursive: true, force: true });
+  // Returns the shared context — same BrowserContext instance for every test,
+  // so session cookies and storage persist across the describe.serial chain.
+  context: async ({ _launchedContext }, use) => {
+    await use(_launchedContext);
   },
 
   page: async ({ context }, use) => {
     const page = await context.newPage();
     await use(page);
+    await page.close().catch(() => {});
   },
 
   extensionId: async ({}, use) => {
-    // Derived deterministically from the manifest key — no browser needed
-    const { extensionIdFromManifestKey } = await import('../utils/system-chrome');
-    const id = extensionIdFromManifestKey(EXTENSION_PATH);
-    await use(id);
+    const { extensionIdFromManifestKey } = IS_WINDOWS
+      ? await import('../utils/system-windows-chrome')
+      : await import('../utils/system-chrome');
+    await use(extensionIdFromManifestKey(EXTENSION_PATH));
   },
 });
 

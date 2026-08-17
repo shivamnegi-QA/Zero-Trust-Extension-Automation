@@ -2,6 +2,8 @@ import * as https from 'https';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+const PAGE_SIZE = parseInt(process.env.DASHBOARD_PAGE_SIZE ?? '3000', 10);
+
 const BASE_URL    = (process.env.SQRX_BASE_URL ?? '').replace(/\/$/, '');
 const API_KEY     = process.env.DASHBOARD_ACCESS_API ?? '';
 // Auth: Basic base64(API_KEY) + x-squarex-platform header (confirmed via API probing)
@@ -52,7 +54,7 @@ function request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<
       headers['Content-Type']   = 'application/json';
       headers['Content-Length'] = Buffer.byteLength(payload);
     }
-    const req = https.request({ hostname: url.hostname, path: url.pathname, method, headers, rejectUnauthorized: false }, res => {
+    const req = https.request({ hostname: url.hostname, path: url.pathname, method, headers, rejectUnauthorized: process.env.DASHBOARD_INSECURE_TLS !== '1' }, res => {
       let data = '';
       res.on('data', (c: string) => data += c);
       res.on('end', () => {
@@ -79,7 +81,7 @@ export class DashboardApiClient {
   }
 
   async listPolicies(): Promise<Policy[]> {
-    const body = await this.post<{ policies: Policy[] }>('/api/teams/policy/list', { page_size: 3000 });
+    const body = await this.post<{ policies: Policy[] }>('/api/teams/policy/list', { page_size: PAGE_SIZE });
     return body.policies ?? [];
   }
 
