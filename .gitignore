@@ -1,4 +1,4 @@
-.env
+.env*
 .ca-bundle.pem
 node_modules/
 dist/
