@@ -3,10 +3,9 @@
  *
  * - system-chrome  → Chrome via CDP (Playwright BrowserContext)
  * - system-firefox → Firefox via geckodriver (GdSession)
- * - system-safari  → Safari via safaridriver + osascript AX (SdSession)
  *
  * Exposes a browser-agnostic `ExtSession` object so the single extension spec
- * can drive all three browsers without per-browser conditionals in test code.
+ * can drive all browsers without per-browser conditionals in test code.
  */
 
 import { test as base, expect, BrowserContext, Page } from '@playwright/test';
@@ -26,27 +25,6 @@ function requireEnv(name: string): string {
 export const EMAIL    = requireEnv('EXTENSION_LOGIN_EMAIL');
 export const PASSWORD = requireEnv('EXTENSION_LOGIN_PASSWORD');
 export const BASE_URL = requireEnv('SQRX_BASE_URL');
-
-// ── Safari UUID resolution ────────────────────────────────────────────────────
-
-async function resolveSafariUuid(): Promise<string> {
-  const { shellExec: _shellExec } = await import('../utils/system-safari') as { shellExec?: (cmd: string) => string };
-  // Read UUID dynamically from pluginkit rather than using a hardcoded constant
-  const { EXTENSION_BUNDLE_ID: bundleId } = await import('../utils/system-safari') as { EXTENSION_BUNDLE_ID?: string };
-  if (bundleId) {
-    try {
-      const { execSync } = await import('child_process');
-      const out = execSync(
-        `pluginkit -m -v -i "${bundleId}" 2>/dev/null | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1`,
-        { timeout: 5_000 }
-      ).toString().trim();
-      if (out) return out;
-    } catch { /* fall through */ }
-  }
-  // Last resort: use the exported constant (may be wrong after reinstall)
-  const { SAFARI_EXTENSION_UUID } = await import('../utils/system-safari');
-  return SAFARI_EXTENSION_UUID;
-}
 
 // ── Browser-agnostic popup session interface ──────────────────────────────────
 
@@ -73,10 +51,10 @@ export interface PopupSession {
   screenshot(filePath: string): Promise<void>;
   /** Poll until predicate returns true */
   poll<T>(fn: () => Promise<T>, cond: (v: T) => boolean, opts: { timeout: number; interval: number; message: string }): Promise<T>;
-  /** The extension's stable identifier (extensionId for Chrome/FF, UUID for Safari) */
+  /** The extension's stable identifier (extensionId for Chrome/FF) */
   extensionKey: string;
   /** Human-readable browser name */
-  browser: 'chrome' | 'firefox' | 'safari';
+  browser: 'chrome' | 'firefox';
 }
 
 // ── Firefox shared popup helpers ──────────────────────────────────────────────
@@ -239,9 +217,9 @@ type ExtensionFixtures = {
 // ── Unified test fixture ──────────────────────────────────────────────────────
 
 export const test = base.extend<{}, ExtensionFixtures>({
-  // extId: the extension identifier (extensionId for Chrome/FF, UUID for Safari)
-  extId: [async ({}, use, testInfo) => {
-    const project = testInfo.project.name;
+  // extId: the extension identifier (extensionId for Chrome/FF)
+  extId: [async ({}, use, workerInfo) => {
+    const project = workerInfo.project.name;
 
     if (project === 'system-chrome') {
       const { extensionIdFromManifestKey } = await import('../utils/system-chrome');
@@ -260,9 +238,6 @@ export const test = base.extend<{}, ExtensionFixtures>({
         const id = manifest?.browser_specific_settings?.gecko?.id ?? manifest?.applications?.gecko?.id ?? '';
         await use(id);
       } catch { await use(''); }
-
-    } else if (project === 'system-safari') {
-      await use(await resolveSafariUuid());
 
     } else if (project === 'windows-chrome' || project === 'windows-edge') {
       const { extensionIdFromManifestKey } = await import('../utils/system-windows-chrome');
@@ -287,8 +262,8 @@ export const test = base.extend<{}, ExtensionFixtures>({
     }
   }, { scope: 'worker' }],
 
-  extSession: [async ({ extId }, use, testInfo) => {
-    const project = testInfo.project.name;
+  extSession: [async ({ extId }, use, workerInfo) => {
+    const project = workerInfo.project.name;
 
     if (project === 'system-chrome') {
       const { launchSystemChromeWithExtension } = await import('../utils/system-chrome');
@@ -374,67 +349,6 @@ export const test = base.extend<{}, ExtensionFixtures>({
         const { rmSync: rm2 } = await import('fs');
         rm2(tmpProfile, { recursive: true, force: true });
       }
-
-    } else if (project === 'system-safari') {
-      const { launchSafariWithExtension, closeSafariPopupViaAX, screenshotSafariPopup, reloadSafariExtension } = await import('../utils/system-safari');
-      const safari = await import('../fixtures/safari');
-
-      const extractedDir = process.env.SAFARI_EXTENSION_DIR
-        ? path.resolve(process.env.SAFARI_EXTENSION_DIR)
-        : path.resolve('extension builds/safari-1.4.3');
-
-      const { session, teardown } = await launchSafariWithExtension({
-        extractedDir,
-        zipPath: process.env.SAFARI_EXTENSION_ZIP ? path.resolve(process.env.SAFARI_EXTENSION_ZIP) : undefined,
-        tag: '[fixture:safari]',
-      });
-
-      const { activateSafari, maximizeSafariWindow } = await import('../utils/system-safari');
-
-      const sfSession: PopupSession = {
-        browser: 'safari',
-        extensionKey: extId,
-        async openPopup() {
-          // Ensure Safari is in focus before any AX interaction
-          activateSafari();
-          // Keep safaridriver session alive — idle >30s causes session expiry
-          await session.currentUrl().catch(() => {});
-          const { bodyText } = await session.openExtensionPopup().catch(() => ({ bodyText: '' }));
-          return bodyText;
-        },
-        async closePopup() {
-          activateSafari();
-          closeSafariPopupViaAX();
-          await new Promise<void>(r => setTimeout(r, 300));
-        },
-        async navigate(url) {
-          await session.navigate(url);
-          // Re-focus Safari after WebDriver navigation so AX interactions land correctly
-          activateSafari();
-        },
-        findElement: (s, sel) => session.findElement(s, sel),
-        clickElement: (id) => session.clickElement(id),
-        execute: <T>(script: string, args: unknown[] = []) => session.execute<T>(script, args),
-        sendKeys: (id, text) => session.sendKeys(id, text),
-        currentUrl: () => session.currentUrl(),
-        screenshot: (p) => { activateSafari(); screenshotSafariPopup(p); return Promise.resolve(); },
-        poll: (fn, cond, opts) => session.poll(fn, cond, opts),
-        async clearAuth() {
-          // Clear cookies and web storage so the next run starts unauthenticated.
-          await session.deleteAllCookies();
-          await session.navigate(BASE_URL).catch(() => {});
-          await session.execute<void>(
-            'try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}'
-          ).catch(() => {});
-          // Ensure Safari stays focused and full screen after navigation.
-          activateSafari();
-          maximizeSafariWindow();
-        },
-      };
-
-      await use(sfSession);
-      await session.deleteSession().catch(() => {});
-      await teardown();
 
     } else if (project === 'windows-chrome') {
       const { launchWindowsBrowserWithExtension } = await import('../utils/system-windows-chrome');
@@ -550,7 +464,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
       }
 
     } else {
-      throw new Error(`Unknown project: ${testInfo.project.name}`);
+      throw new Error(`Unknown project: ${workerInfo.project.name}`);
     }
   }, { scope: 'worker' }],
 });

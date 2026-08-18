@@ -48,13 +48,12 @@ function validateTestFilePath(relPath: string): string | null {
 function fileToBrowser(relPath: string): string {
   const f = relPath.toLowerCase();
   if (f.includes('firefox')) return 'firefox';
-  if (f.includes('safari'))  return 'safari';
   if (f.includes('chrome') || /\b0*1-extension/.test(f)) return 'chrome';
   return 'all';
 }
 
 function canonicalTestName(name: string): string {
-  return name.replace(/\s+in\s+(chrome|firefox|safari)$/i, '').trim();
+  return name.replace(/\s+in\s+(chrome|firefox)$/i, '').trim();
 }
 
 // Extract the body of a test's async callback.
@@ -376,13 +375,12 @@ app.post('/api/run', (req, res) => {
 
   // Validate and sanitise browsers — only known values accepted
   const KNOWN_BROWSERS = [
-    'chrome', 'firefox', 'safari',
+    'chrome', 'firefox',
     'windows-chrome', 'windows-edge', 'windows-firefox',
   ];
   const BROWSER_TO_PROJECT: Record<string, string> = {
     chrome:            'system-chrome',
     firefox:           'system-firefox',
-    safari:            'system-safari',
     'windows-chrome':  'windows-chrome',
     'windows-edge':    'windows-edge',
     'windows-firefox': 'windows-firefox',

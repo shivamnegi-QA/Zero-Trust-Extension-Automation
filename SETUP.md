@@ -1,7 +1,7 @@
 # ZT Extension Policy Regression — Setup Guide
 
 Cross-platform Playwright test suite for the Zero Trust Browser (ZTB) extension.
-Runs on **macOS** (Chrome, Firefox, Safari) and **Windows** (Chrome, Edge, Firefox).
+Runs on **macOS** (Chrome, Firefox) and **Windows** (Chrome, Edge, Firefox).
 
 `playwright.config.ts` automatically includes only the projects for the current OS — no manual changes needed when switching between machines.
 
@@ -12,7 +12,7 @@ Runs on **macOS** (Chrome, Firefox, Safari) and **Windows** (Chrome, Edge, Firef
 ```
 fixtures/
   base.ts             # Worker-scoped CDP fixture for 02-dashboard-login.spec.ts
-  extension.ts        # Unified worker-scoped fixture (PopupSession) for all 6 browser projects
+  extension.ts        # Unified worker-scoped fixture (PopupSession) for all browser projects
   firefox.ts          # Firefox popup helper used by extension.ts
 
 tests/
@@ -23,14 +23,13 @@ tests/
 
 utils/
   system-chrome.ts          # macOS only: ChromeDriver + Swift AX + AppleScript NSOpenPanel
-  system-safari.ts          # macOS only: safaridriver + osascript AX popup automation
   system-firefox.ts         # Cross-platform: geckodriver + GdSession (handles both macOS and Windows)
   system-windows-chrome.ts  # Windows only: ChromeDriver/MSEdgeDriver + PowerShell file-picker
   system-windows-edge.ts    # Windows only: MSEdgeDriver wrapper (delegates to windows-chrome)
   platform.ts               # OS-aware binary paths (auto-detects platform, reads .env overrides)
   shared.ts                 # WdClient HTTP wrapper, sleep, getFreePort, extensionIdFromManifestKey
 
-playwright.config.ts  # Defines all 6 projects; macOS projects excluded on Windows, vice versa
+playwright.config.ts  # Defines all projects; macOS projects excluded on Windows, vice versa
 ```
 
 ### Projects per OS
@@ -39,7 +38,6 @@ playwright.config.ts  # Defines all 6 projects; macOS projects excluded on Windo
 |---|---|---|---|
 | `system-chrome` | macOS | Chrome via ChromeDriver + NSOpenPanel AX | both |
 | `system-firefox` | macOS | Firefox via geckodriver | extension-load-and-login |
-| `system-safari` | macOS | Safari via safaridriver + osascript AX | extension-load-and-login |
 | `windows-chrome` | Windows | Chrome via ChromeDriver + PowerShell | both |
 | `windows-edge` | Windows | Edge via MSEdgeDriver + PowerShell | extension-load-and-login |
 | `windows-firefox` | Windows | Firefox via geckodriver | extension-load-and-login |
@@ -67,7 +65,6 @@ Edit `fixtures/extension.ts`. It has separate branches per project name. Changin
 | Chrome popup (macOS) | `system-chrome` branch |
 | Chrome popup (Windows) | `windows-chrome` and `windows-edge` branches |
 | Firefox popup | `system-firefox` / `windows-firefox` branches (shared helper in `fixtures/firefox.ts`) |
-| Safari popup | `system-safari` branch |
 
 ### Chrome extension loading (macOS)
 Edit `utils/system-chrome.ts`.
@@ -96,14 +93,6 @@ Edit `utils/system-firefox.ts`. It handles both macOS and Windows via `IS_WINDOW
 - Kill on macOS: `process.kill(pid, 'SIGTERM')`
 - Kill on Windows: `taskkill /F /T`
 
-### Safari extension loading (macOS only)
-Edit `utils/system-safari.ts`.
-
-- Installs via `.app` bundle (`open -W appPath`)
-- Enables extension via Safari Preferences > Extensions (osascript AX)
-- Enables Remote Automation via Safari Develop menu (osascript AX)
-- Popup interaction is entirely via osascript (`openAndReadSafariPopup`, `clickInSafariPopup`, etc.) — no CDP or Playwright
-
 ### Dashboard test fixture (Chrome-only base fixture)
 Edit `fixtures/base.ts`.
 
@@ -125,13 +114,11 @@ node -v   # must be 20 or higher
 ### 2. System browsers
 - **Google Chrome**: `/Applications/Google Chrome.app`
 - **Firefox**: `/Applications/Firefox.app`
-- **Safari**: built-in (no install needed)
 
 ### 3. Browser drivers
 ```bash
 brew install chromedriver     # must match installed Chrome major version
 brew install geckodriver       # Firefox WebDriver
-safaridriver --enable          # enable Safari WebDriver (one-time, requires sudo)
 ```
 
 Verify Chrome + ChromeDriver versions match:
@@ -140,8 +127,8 @@ chromedriver --version
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version
 ```
 
-### 4. Accessibility permission (required for Chrome and Safari)
-Both `system-chrome` and `system-safari` use osascript + the AX API to automate native UI (NSOpenPanel, toolbar buttons, popup text). This requires Accessibility access.
+### 4. Accessibility permission (required for Chrome)
+`system-chrome` uses osascript + the AX API to automate native UI (NSOpenPanel). This requires Accessibility access.
 
 **System Settings → Privacy & Security → Accessibility** → add the app you run tests from:
 - `Terminal.app`
@@ -149,7 +136,7 @@ Both `system-chrome` and `system-safari` use osascript + the AX API to automate 
 - `iTerm.app`
 - Or the shell binary directly (e.g. `/bin/zsh`)
 
-Without this, Chrome extension loading and Safari popup interaction will fail or hang.
+Without this, Chrome extension loading will fail or hang.
 
 ### 5. Install dependencies
 ```bash
@@ -171,7 +158,6 @@ Edit `.env`:
 | `SQRX_BASE_URL` | Tenant base URL, e.g. `https://automation.in.onsquarex.com/` |
 | `EXTENSION_PATH` | Path to unpacked Chrome extension (relative to project root) |
 | `FIREFOX_EXTENSION_PATH` | Path to unpacked Firefox extension build |
-| `SAFARI_EXTENSION_DIR` | Path to extracted Safari extension bundle directory |
 
 macOS binary paths (only needed if not at the default locations):
 ```env
@@ -194,9 +180,6 @@ extension builds/
     build/                  # Firefox unpacked (FIREFOX_EXTENSION_PATH default on macOS)
       manifest.json
       ...
-  safari-1.4.3/             # Safari: must contain Debug/Zero Trust Browser Extension.app
-    Debug/
-      Zero Trust Browser Extension.app
   screenshots/              # Created automatically; test screenshots saved here
 ```
 
@@ -213,7 +196,6 @@ npx playwright test
 # Single project
 npx playwright test --project=system-chrome
 npx playwright test --project=system-firefox
-npx playwright test --project=system-safari
 
 # Single spec
 npx playwright test tests/extension-load-and-login.spec.ts --project=system-chrome
@@ -389,14 +371,13 @@ test-results/
 
 ### macOS
 - [ ] Node.js 20+ installed
-- [ ] Chrome, Firefox, Safari installed
+- [ ] Chrome, Firefox installed
 - [ ] `chromedriver` and `geckodriver` installed via Homebrew and version-matched
-- [ ] `safaridriver --enable` run once
 - [ ] Accessibility permission granted to Terminal / VS Code / iTerm
 - [ ] `npm install` run in project root
 - [ ] `.env` created from `.env.example` with credentials and paths
 - [ ] Extension builds placed under `extension builds/`
-- [ ] `npx playwright test` — should run `system-chrome`, `system-firefox`, `system-safari`
+- [ ] `npx playwright test` — should run `system-chrome`, `system-firefox`
 
 ### Windows
 - [ ] Node.js 20+ installed

@@ -28,15 +28,11 @@ export default defineConfig({
     ...(!isWindows ? [
       {
         name: 'system-chrome',
-        testIgnore: ['**/ui/**', '**/*firefox*', '**/*safari*', '**/01-extension*', '**/02-firefox*', '**/03-safari*'],
+        testIgnore: ['**/ui/**', '**/*firefox*', '**/01-extension*', '**/02-firefox*'],
         testMatch: ['**/extension-load-and-login.spec.ts', '**/02-dashboard-login.spec.ts'],
       },
       {
         name: 'system-firefox',
-        testMatch: ['**/extension-load-and-login.spec.ts'],
-      },
-      {
-        name: 'system-safari',
         testMatch: ['**/extension-load-and-login.spec.ts'],
       },
     ] : []),

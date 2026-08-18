@@ -1,27 +1,27 @@
 # Zero Trust Extension Automation
 
-Playwright-based regression test suite for the **Zero Trust Browser (ZTB)** extension by Zscaler/SquareX. Automates extension loading, popup state verification, and dashboard login across Chrome, Firefox, and Safari on macOS — with Windows (Chrome, Edge, Firefox) support documented in [SETUP.md](SETUP.md).
+Playwright-based regression test suite for the **Zero Trust Browser (ZTB)** extension by Zscaler/SquareX. Automates extension loading, popup state verification, and dashboard login across Chrome and Firefox on macOS — with Windows (Chrome, Edge, Firefox) support documented in [SETUP.md](SETUP.md).
 
 ---
 
 ## Test coverage
 
-| Test | Chrome | Firefox | Safari |
-|---|:---:|:---:|:---:|
-| Extension loads | ✅ | ✅ | ✅ |
-| Extension popup opens | ✅ | ✅ | ✅ |
-| Popup shows unauthenticated state | ✅ | ✅ | ✅ |
-| Popup shows connected state after login | ✅ | ✅ | ✅ |
-| Dashboard login page loads | ✅ | — | — |
-| Login fails with wrong password | ✅ | — | — |
-| Login succeeds with valid credentials | ✅ | — | — |
-| Session persists after page reload | ✅ | — | — |
+| Test | Chrome | Firefox |
+|---|:---:|:---:|
+| Extension loads | ✅ | ✅ |
+| Extension popup opens | ✅ | ✅ |
+| Popup shows unauthenticated state | ✅ | ✅ |
+| Popup shows connected state after login | ✅ | ✅ |
+| Dashboard login page loads | ✅ | — |
+| Login fails with wrong password | ✅ | — |
+| Login succeeds with valid credentials | ✅ | — |
+| Session persists after page reload | ✅ | — |
 
 ---
 
 ## Architecture
 
-Each Playwright **project** (`system-chrome`, `system-firefox`, `system-safari`) launches its browser **once** per run via worker-scoped fixtures and shares that session across all tests. A `beforeEach` hook calls `clearAuth()` to reset cookies before every test.
+Each Playwright **project** (`system-chrome`, `system-firefox`) launches its browser **once** per run via worker-scoped fixtures and shares that session across all tests. A `beforeEach` hook calls `clearAuth()` to reset cookies before every test.
 
 ```
 Worker starts → browser launches once
@@ -36,16 +36,15 @@ Worker starts → browser launches once
 Worker teardown → browser closed
 ```
 
-The `PopupSession` interface in [fixtures/extension.ts](fixtures/extension.ts) abstracts all browser differences so the single spec drives all three browsers without per-browser conditionals.
+The `PopupSession` interface in [fixtures/extension.ts](fixtures/extension.ts) abstracts all browser differences so the single spec drives all browsers without per-browser conditionals.
 
 ---
 
 ## Prerequisites (macOS)
 
 - Node.js 20+
-- Chrome, Firefox, Safari (built-in)
+- Chrome, Firefox
 - `brew install chromedriver geckodriver`
-- `safaridriver --enable`
 - **Accessibility permission** for the terminal app: System Settings → Privacy & Security → Accessibility
 
 ## Setup
@@ -62,7 +61,6 @@ Place extension builds at the paths set in `.env`:
 extension builds/
   current/               # Chrome unpacked
   firefox-1.4.3/build/   # Firefox unpacked
-  safari-1.4.3/          # Safari app bundle
 ```
 
 Or download automatically from the deployment page:
@@ -81,7 +79,6 @@ npx playwright test
 # Single browser
 npx playwright test --project=system-chrome
 npx playwright test --project=system-firefox
-npx playwright test --project=system-safari
 
 # Smoke suite only
 npm run test:smoke
@@ -99,7 +96,6 @@ fixtures/
   extension.ts        # Unified worker-scoped fixture (PopupSession interface)
   base.ts             # Chrome CDP fixture
   firefox.ts          # Firefox geckodriver helpers
-  safari.ts           # Safari safaridriver helpers
 
 tests/
   extension-load-and-login.spec.ts   # Cross-browser extension spec
@@ -110,7 +106,6 @@ tests/
 utils/
   system-chrome.ts    # Chrome launch + NSOpenPanel AX automation
   system-firefox.ts   # geckodriver + GdSession WebDriver client
-  system-safari.ts    # safaridriver + SdSession + AX popup automation
 
 scripts/
   global-setup.ts     # Download/verify extension build before test run

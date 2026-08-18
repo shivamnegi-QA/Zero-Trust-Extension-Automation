@@ -1,4 +1,4 @@
-// Minimal duck-type interface shared by GdSession (Firefox), SdSession (Safari), and PopupSession (Chrome/Edge).
+// Minimal duck-type interface shared by GdSession (Firefox) and PopupSession (Chrome/Edge).
 export interface WebDriverSession {
   navigate(url: string): Promise<unknown>;
   findElement(strategy: string, selector: string): Promise<string | null>;
@@ -12,7 +12,7 @@ export function sleep(ms: number) { return new Promise<void>(r => setTimeout(r, 
 
 /**
  * Log into the dashboard using the raw WebDriver JSON-wire protocol.
- * Works with both GdSession (Firefox) and SdSession (Safari).
+ * Works with GdSession (Firefox) and PopupSession (Chrome/Edge).
  */
 export async function webdriverLogin(
   session: WebDriverSession,
