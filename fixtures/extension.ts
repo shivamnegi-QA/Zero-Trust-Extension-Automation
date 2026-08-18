@@ -125,9 +125,8 @@ function makeFirefoxPopupMethods(
 
 // ── Chrome adapter ────────────────────────────────────────────────────────────
 
-function makeChromeSession(context: BrowserContext, extensionId: string): PopupSession {
-  const { openExtensionPopup } = require('../fixtures/base') as typeof import('../fixtures/base');
-  let lastPopup: Page | null = null;
+function makeChromeSession(context: BrowserContext, extensionId: string, _cdpEndpoint: string): PopupSession {
+  const { openExtensionPopupBodyText, closeExtensionPopup } = require('../fixtures/base') as typeof import('../fixtures/base');
 
   async function poll<T>(fn: () => Promise<T>, cond: (v: T) => boolean, opts: { timeout: number; interval: number; message: string }): Promise<T> {
     const deadline = Date.now() + opts.timeout;
@@ -140,20 +139,26 @@ function makeChromeSession(context: BrowserContext, extensionId: string): PopupS
   }
 
   let navPage: Page | null = null;
+  let lastPopupPage: Page | null = null;
 
   return {
     browser: 'chrome',
     extensionKey: extensionId,
     async openPopup() {
-      if (lastPopup && !lastPopup.isClosed()) await lastPopup.close().catch(() => {});
-      const popup = await openExtensionPopup(context, extensionId);
-      lastPopup = popup;
-      await popup.waitForTimeout(1_500);
-      return popup.locator('body').innerText().catch(() => '');
+      await closeExtensionPopup(context, extensionId).catch(() => {});
+      if (lastPopupPage && !lastPopupPage.isClosed()) { await lastPopupPage.close().catch(() => {}); lastPopupPage = null; }
+      const anchor = (navPage && !navPage.isClosed()) ? navPage : undefined;
+      const body = await openExtensionPopupBodyText(context, extensionId, anchor);
+      // Open a navigated page for subsequent findElement/clickElement calls on the popup
+      const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+      lastPopupPage = await context.newPage();
+      await lastPopupPage.goto(popupUrl).catch(() => {});
+      await lastPopupPage.waitForLoadState('networkidle').catch(() => {});
+      return body;
     },
     async closePopup() {
-      if (lastPopup && !lastPopup.isClosed()) await lastPopup.close().catch(() => {});
-      lastPopup = null;
+      await closeExtensionPopup(context, extensionId).catch(() => {});
+      if (lastPopupPage && !lastPopupPage.isClosed()) { await lastPopupPage.close().catch(() => {}); lastPopupPage = null; }
     },
     async navigate(url) {
       if (!navPage || navPage.isClosed()) {
@@ -162,29 +167,26 @@ function makeChromeSession(context: BrowserContext, extensionId: string): PopupS
       await navPage.goto(url);
     },
     async findElement(strategy, selector) {
-      const pages = context.pages();
-      const page = pages[pages.length - 1];
-      if (!page) return null;
+      const pg = (lastPopupPage && !lastPopupPage.isClosed()) ? lastPopupPage
+               : (navPage && !navPage.isClosed()) ? navPage : null;
+      if (!pg) return null;
       try {
-        const loc = strategy === 'css selector' ? page.locator(selector) : page.locator(`xpath=${selector}`);
-        const el = loc.first();
-        const visible = await el.isVisible({ timeout: 2_000 }).catch(() => false);
+        const loc = strategy === 'css selector' ? pg.locator(selector) : pg.locator(`xpath=${selector}`);
+        const visible = await loc.first().isVisible({ timeout: 2_000 }).catch(() => false);
         return visible ? selector : null;
       } catch { return null; }
     },
     async clickElement(id) {
-      const pages = context.pages();
-      const page = pages[pages.length - 1];
-      if (!page) return;
-      const loc = page.locator(id).first();
-      await loc.click({ timeout: 5_000 });
+      const pg = (lastPopupPage && !lastPopupPage.isClosed()) ? lastPopupPage
+               : (navPage && !navPage.isClosed()) ? navPage : null;
+      if (!pg) return;
+      await pg.locator(id).first().click({ timeout: 5_000 });
     },
     async execute<T>(script: string, args: unknown[] = []) {
-      const pages = context.pages();
-      const page = pages[pages.length - 1];
-      if (!page) throw new Error('No page available');
-      // Wrap as a W3C-style execute/sync call: fn receives args as 'arguments'
-      return page.evaluate(
+      const pg = (lastPopupPage && !lastPopupPage.isClosed()) ? lastPopupPage
+               : (navPage && !navPage.isClosed()) ? navPage : null;
+      if (!pg) throw new Error('No page available');
+      return pg.evaluate(
         ({ script: s, args: a }: { script: string; args: unknown[] }) =>
           // eslint-disable-next-line @typescript-eslint/no-implied-eval
           (new Function(s)).apply(null, a) as T,
@@ -192,15 +194,13 @@ function makeChromeSession(context: BrowserContext, extensionId: string): PopupS
       );
     },
     async sendKeys(elementId: string, text: string) {
-      const pages = context.pages();
-      const page = pages[pages.length - 1];
-      if (!page) return;
-      await page.locator(elementId).fill(text);
+      const pg = (lastPopupPage && !lastPopupPage.isClosed()) ? lastPopupPage
+               : (navPage && !navPage.isClosed()) ? navPage : null;
+      if (!pg) return;
+      await pg.locator(elementId).fill(text);
     },
     async currentUrl() {
-      const pages = context.pages();
-      const page = pages[pages.length - 1];
-      return page?.url() ?? '';
+      return navPage?.url() ?? '';
     },
     async clearAuth() {
       await context.clearCookies();
@@ -223,7 +223,7 @@ function makeChromeSession(context: BrowserContext, extensionId: string): PopupS
       }
     },
     async screenshot(filePath) {
-      if (lastPopup && !lastPopup.isClosed()) await lastPopup.screenshot({ path: filePath });
+      // Screenshot not available with CDP-based popup reading
     },
     poll,
   };
@@ -247,7 +247,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
       const { extensionIdFromManifestKey } = await import('../utils/system-chrome');
       const extPath = process.env.EXTENSION_PATH
         ? path.resolve(process.env.EXTENSION_PATH)
-        : path.resolve('extension builds/extension-unpacked');
+        : path.resolve('extension builds/chrome-1.4.3/build');
       await use(extensionIdFromManifestKey(extPath));
 
     } else if (project === 'system-firefox') {
@@ -299,7 +299,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
 
       const extPath = process.env.EXTENSION_PATH
         ? path.resolve(process.env.EXTENSION_PATH)
-        : path.resolve('extension builds/extension-unpacked');
+        : path.resolve('extension builds/chrome-1.4.3/build');
       const tmpProfile = mkdtempSync(path.join(tmpdir(), 'ztb-test-'));
 
       const { cdpEndpoint, teardown } = await launchSystemChromeWithExtension({
@@ -312,7 +312,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
       try {
         browser = await chromium.connectOverCDP(cdpEndpoint);
         const context = browser.contexts()[0] ?? await browser.newContext();
-        await use(makeChromeSession(context, extId));
+        await use(makeChromeSession(context, extId, cdpEndpoint));
       } finally {
         await teardown();
         await browser?.close().catch(() => {});
@@ -355,7 +355,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
         poll: (fn, cond, opts) => session.poll(fn, cond, opts),
         async clearAuth() {
           await session.deleteAllCookies();
-          // Navigate to origin to clear localStorage before going to about:blank
+          // Navigate to origin to clear localStorage
           const handles = await session.getWindowHandles().catch(() => [] as string[]);
           const mainHandle = handles.find(h => h !== lastHandle) ?? handles[0];
           if (mainHandle) await session.switchToWindow(mainHandle).catch(() => {});
@@ -363,8 +363,6 @@ export const test = base.extend<{}, ExtensionFixtures>({
           await session.execute<void>(
             'try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}'
           ).catch(() => {});
-          await session.navigate('about:blank').catch(() => {});
-          await new Promise<void>(r => setTimeout(r, 500));
         },
       };
 
@@ -378,7 +376,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
       }
 
     } else if (project === 'system-safari') {
-      const { launchSafariWithExtension, closeSafariPopupViaAX, screenshotSafariPopup } = await import('../utils/system-safari');
+      const { launchSafariWithExtension, closeSafariPopupViaAX, screenshotSafariPopup, reloadSafariExtension } = await import('../utils/system-safari');
       const safari = await import('../fixtures/safari');
 
       const extractedDir = process.env.SAFARI_EXTENSION_DIR
@@ -391,29 +389,46 @@ export const test = base.extend<{}, ExtensionFixtures>({
         tag: '[fixture:safari]',
       });
 
+      const { activateSafari, maximizeSafariWindow } = await import('../utils/system-safari');
+
       const sfSession: PopupSession = {
         browser: 'safari',
         extensionKey: extId,
         async openPopup() {
+          // Ensure Safari is in focus before any AX interaction
+          activateSafari();
+          // Keep safaridriver session alive — idle >30s causes session expiry
+          await session.currentUrl().catch(() => {});
           const { bodyText } = await session.openExtensionPopup().catch(() => ({ bodyText: '' }));
           return bodyText;
         },
         async closePopup() {
+          activateSafari();
           closeSafariPopupViaAX();
           await new Promise<void>(r => setTimeout(r, 300));
         },
-        navigate: (url) => session.navigate(url).then(() => {}),
+        async navigate(url) {
+          await session.navigate(url);
+          // Re-focus Safari after WebDriver navigation so AX interactions land correctly
+          activateSafari();
+        },
         findElement: (s, sel) => session.findElement(s, sel),
         clickElement: (id) => session.clickElement(id),
         execute: <T>(script: string, args: unknown[] = []) => session.execute<T>(script, args),
         sendKeys: (id, text) => session.sendKeys(id, text),
         currentUrl: () => session.currentUrl(),
-        screenshot: (p) => { screenshotSafariPopup(p); return Promise.resolve(); },
+        screenshot: (p) => { activateSafari(); screenshotSafariPopup(p); return Promise.resolve(); },
         poll: (fn, cond, opts) => session.poll(fn, cond, opts),
         async clearAuth() {
+          // Clear cookies and web storage so the next run starts unauthenticated.
           await session.deleteAllCookies();
-          await session.navigate('about:blank');
-          await new Promise<void>(r => setTimeout(r, 500));
+          await session.navigate(BASE_URL).catch(() => {});
+          await session.execute<void>(
+            'try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}'
+          ).catch(() => {});
+          // Ensure Safari stays focused and full screen after navigation.
+          activateSafari();
+          maximizeSafariWindow();
         },
       };
 
@@ -442,7 +457,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
       try {
         browser = await chromium.connectOverCDP(cdpEndpoint);
         const context = browser.contexts()[0] ?? await browser.newContext();
-        await use(makeChromeSession(context, extId));
+        await use(makeChromeSession(context, extId, cdpEndpoint));
       } finally {
         await teardown();
         await browser?.close().catch(() => {});
@@ -471,7 +486,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
       try {
         browser = await chromium.connectOverCDP(cdpEndpoint);
         const context = browser.contexts()[0] ?? await browser.newContext();
-        await use(makeChromeSession(context, extId));
+        await use(makeChromeSession(context, extId, cdpEndpoint));
       } finally {
         await teardown();
         await browser?.close().catch(() => {});
@@ -514,7 +529,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
         poll: (fn, cond, opts) => session.poll(fn, cond, opts),
         async clearAuth() {
           await session.deleteAllCookies();
-          // Navigate to origin to clear localStorage before going to about:blank
+          // Navigate to origin to clear localStorage
           const handles = await session.getWindowHandles().catch(() => [] as string[]);
           const mainHandle = handles.find(h => h !== lastHandle) ?? handles[0];
           if (mainHandle) await session.switchToWindow(mainHandle).catch(() => {});
@@ -522,8 +537,6 @@ export const test = base.extend<{}, ExtensionFixtures>({
           await session.execute<void>(
             'try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}'
           ).catch(() => {});
-          await session.navigate('about:blank').catch(() => {});
-          await new Promise<void>(r => setTimeout(r, 500));
         },
       };
 

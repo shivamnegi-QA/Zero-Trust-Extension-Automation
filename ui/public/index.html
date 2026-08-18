@@ -931,19 +931,123 @@
     }
 
     .suite-test-detail {
-      display: none; padding: 8px 14px 10px 42px;
+      display: none; padding: 10px 14px 12px 42px;
       background: var(--log-body-bg); border-top: 1px solid var(--border);
     }
     .suite-test-row.open + .suite-test-detail { display: block; }
-    .suite-test-desc  { font-size: 11.5px; color: var(--muted-2); line-height: 1.6; margin-bottom: 6px; }
+    .suite-test-desc  { font-size: 11.5px; color: var(--muted-2); line-height: 1.6; margin-bottom: 8px; }
     .suite-test-validation {
       display: flex; align-items: flex-start; gap: 6px;
-      font-size: 11px; color: var(--muted); line-height: 1.55;
+      font-size: 11px; color: var(--muted); line-height: 1.55; margin-bottom: 10px;
     }
     .suite-test-validation .v-label {
       font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
       color: var(--accent); flex-shrink: 0; margin-top: 1px;
     }
+    /* Steps list */
+    .steps-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--accent); margin-bottom: 6px; display: block;
+    }
+    .steps-list {
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .step-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 11.5px; color: var(--muted-2); line-height: 1.5;
+    }
+    .step-num {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      color: var(--border-2); font-weight: 600; min-width: 18px;
+      text-align: right; flex-shrink: 0; margin-top: 1px;
+    }
+    .step-text { flex: 1; }
+
+    /* ── Detail action buttons (Logs / Screenshot) ───────────────────────────── */
+    .detail-actions {
+      display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap;
+    }
+    .detail-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--border); background: transparent;
+      color: var(--muted); font-family: 'Inter', sans-serif;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .detail-btn:hover { background: var(--accent-dim); border-color: rgba(0,212,255,0.3); color: var(--accent); }
+    .detail-btn.active { background: var(--accent-dim); border-color: rgba(0,212,255,0.35); color: var(--accent); }
+    .detail-btn.screenshot-btn:hover { background: rgba(124,58,237,0.1); border-color: rgba(124,58,237,0.35); color: var(--accent-2); }
+    .detail-btn.screenshot-btn.has-shot { border-color: rgba(124,58,237,0.3); color: var(--accent-2); }
+
+    /* Log panel inside detail */
+    .detail-log-panel {
+      display: none; margin-top: 10px;
+      background: rgba(10,14,26,0.55); border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden;
+    }
+    [data-theme="light"] .detail-log-panel { background: rgba(240,244,248,0.8); }
+    .detail-log-panel.open { display: block; }
+    .detail-log-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 12px; border-bottom: 1px solid var(--border);
+      background: var(--pane-header-bg);
+    }
+    .detail-log-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); }
+    .detail-log-clear { font-size: 10px; color: var(--muted); cursor: pointer; background: none; border: none; font-family: 'Inter', sans-serif; }
+    .detail-log-clear:hover { color: var(--text); }
+    .detail-log-body {
+      padding: 8px 14px 10px;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.75;
+      max-height: 320px; overflow-y: auto; color: var(--muted-2);
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .detail-log-body .ll-pass   { color: var(--done); }
+    .detail-log-body .ll-fail   { color: var(--danger); font-weight: 500; }
+    .detail-log-body .ll-warn   { color: var(--wip); }
+    .detail-log-body .ll-info   { color: var(--accent); }
+    .detail-log-body .ll-stderr { color: #fb923c; }
+    .detail-log-body .ll-dim    { color: var(--border-2); }
+    .detail-log-empty { color: var(--border-2); font-style: italic; font-size: 11px; padding: 6px 0; }
+
+    /* ── Screenshot modal ────────────────────────────────────────────────────── */
+    #screenshot-modal {
+      display: none; position: fixed; inset: 0; z-index: 9000;
+      background: rgba(0,0,0,0.78); backdrop-filter: blur(6px);
+      align-items: center; justify-content: center;
+    }
+    #screenshot-modal.open { display: flex; }
+    .screenshot-modal-inner {
+      position: relative; max-width: 90vw; max-height: 88vh;
+      display: flex; flex-direction: column;
+      background: var(--card); border: 1px solid var(--border-2);
+      border-radius: var(--radius); overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+    }
+    .screenshot-modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      background: var(--pane-header-bg); flex-shrink: 0;
+    }
+    .screenshot-modal-title { font-size: 12px; font-weight: 600; color: var(--text); }
+    .screenshot-modal-close {
+      width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; cursor: pointer; color: var(--muted); display: flex;
+      align-items: center; justify-content: center;
+      transition: background .12s, color .12s;
+    }
+    .screenshot-modal-close:hover { background: var(--danger-dim); color: var(--danger); border-color: rgba(239,68,68,0.3); }
+    .screenshot-modal-body {
+      flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center;
+      padding: 16px; min-height: 200px;
+    }
+    .screenshot-modal-body img { max-width: 100%; max-height: 72vh; border-radius: 6px; display: block; }
+    .screenshot-modal-footer {
+      padding: 8px 16px; border-top: 1px solid var(--border); flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 11px; color: var(--muted);
+    }
+    .screenshot-modal-footer a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .screenshot-modal-footer a:hover { text-decoration: underline; }
 
     /* total-tests banner above suites */
     .tests-total-banner {
@@ -1335,6 +1439,25 @@
   <div class="footer-stat" id="footer-status-text" style="color:var(--muted);">No run yet</div>
 </footer>
 
+<!-- Screenshot modal -->
+<div id="screenshot-modal" onclick="if(event.target===this)closeScreenshotModal()">
+  <div class="screenshot-modal-inner">
+    <div class="screenshot-modal-header">
+      <span class="screenshot-modal-title" id="screenshot-modal-title">Screenshot</span>
+      <button class="screenshot-modal-close" onclick="closeScreenshotModal()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="screenshot-modal-body">
+      <img id="screenshot-modal-img" src="" alt="Test screenshot" />
+    </div>
+    <div class="screenshot-modal-footer">
+      <span id="screenshot-modal-label"></span>
+      <a id="screenshot-modal-link" href="" target="_blank" rel="noopener">Open full size ↗</a>
+    </div>
+  </div>
+</div>
+
 <div id="global-tooltip"></div>
 <script>
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1390,7 +1513,7 @@ let es = null;
 let runStart = null;
 let allFiles = [];
 let selectedFiles = new Set();
-let testMap = new Map();        // key → { suite, name, status, rowEl, groupEl, groupBodyEl, lineCount }
+let testMap = new Map();        // key → { suite, name, status, rowEl, groupEl, groupBodyEl, lineCount, logLines, screenshotUrl }
 let suitesMap = new Map();      // suiteName → { blockEl, bodyEl, tests: Map<name, rowEl> }
 let currentTestKey = null;
 let metaGroupEl = null;
@@ -1559,14 +1682,43 @@ function ensureSuiteTestRow(suiteName, testName) {
 
   const detail = document.createElement('div');
   detail.className = 'suite-test-detail';
-  if (cat && (cat.description || cat.validation)) {
-    detail.innerHTML = `
-      ${cat.description ? `<div class="suite-test-desc">${escHtml(cat.description)}</div>` : ''}
-      ${cat.validation  ? `<div class="suite-test-validation"><span class="v-label">Validates</span><span>${escHtml(cat.validation)}</span></div>` : ''}
-    `;
-  } else {
-    detail.innerHTML = `<div class="suite-test-desc" style="color:var(--muted)">Add <code style="font-family:monospace;font-size:10px">// @desc</code> and <code style="font-family:monospace;font-size:10px">// @validates</code> comments above this test for details.</div>`;
+  const steps = (cat && cat.steps && cat.steps.length) ? cat.steps : [];
+  let detailHtml = '';
+  if (cat && cat.description) detailHtml += `<div class="suite-test-desc">${escHtml(cat.description)}</div>`;
+  if (cat && cat.validation)  detailHtml += `<div class="suite-test-validation"><span class="v-label">Validates</span><span>${escHtml(cat.validation)}</span></div>`;
+  if (steps.length) {
+    detailHtml += `<span class="steps-label">Test Steps</span><div class="steps-list">`;
+    steps.forEach((s, i) => {
+      detailHtml += `<div class="step-item"><span class="step-num">${i + 1}.</span><span class="step-text">${escHtml(s)}</span></div>`;
+    });
+    detailHtml += `</div>`;
   }
+  if (!detailHtml) {
+    detailHtml = `<div class="suite-test-desc" style="color:var(--muted)">No step details available for this test.</div>`;
+  }
+  // Action buttons + expandable log panel + screenshot modal trigger
+  detailHtml += `
+    <div class="detail-actions">
+      <button class="detail-btn log-toggle-btn" data-key="${escHtml(lgId)}" onclick="toggleDetailLog(this)">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        Logs
+        <span class="log-line-count" style="font-size:10px;opacity:0.6;margin-left:2px;"></span>
+      </button>
+      <button class="detail-btn screenshot-btn" data-key="${escHtml(lgId)}" onclick="openScreenshotForKey(this)" style="display:none;">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        View Screenshot
+      </button>
+    </div>
+    <div class="detail-log-panel" id="dlp-${escHtml(lgId)}">
+      <div class="detail-log-header">
+        <span class="detail-log-title">Test Output Log</span>
+      </div>
+      <div class="detail-log-body" id="dlb-${escHtml(lgId)}">
+        <span class="detail-log-empty">No log output yet — run this test to see detailed logs.</span>
+      </div>
+    </div>
+  `;
+  detail.innerHTML = detailHtml;
 
   suite.bodyEl.appendChild(row);
   suite.bodyEl.appendChild(detail);
@@ -1993,7 +2145,7 @@ function ensureTestEntry(suite, name, status = 'pending') {
   ensureSuiteTestRow(suite, name);
 
   // groupEl points to the row itself so existing finalize/badge code keeps working
-  const entry = { suite, name, status, rowEl: row, groupEl: row, groupBodyEl, lineCount: 0 };
+  const entry = { suite, name, status, rowEl: row, groupEl: row, groupBodyEl, lineCount: 0, logLines: [], screenshotUrl: null };
   testMap.set(key, entry);
   updateOutputCount();
   return key;
@@ -2055,19 +2207,115 @@ async function loadScreenshot(entry) {
     const r = await fetch(`/api/screenshot?suite=${encodeURIComponent(entry.suite)}&name=${encodeURIComponent(entry.name)}`);
     const { url } = await r.json();
     if (!url) return;
-    if (entry.groupBodyEl.querySelector('.screenshot-link')) return;
-    const link = document.createElement('a');
-    link.className = 'screenshot-link';
-    link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-    link.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> View failure screenshot ↗`;
-    entry.groupBodyEl.appendChild(link);
-    entry.rowEl.classList.add('open');
+
+    // Store on entry for the detail-panel screenshot button
+    entry.screenshotUrl = url;
+
+    // Show screenshot button in the detail panel
+    const lgId = `lg-${(entry.suite + '::' + entry.name).replace(/[^a-z0-9]/gi, '-')}`;
+    const shotBtn = document.querySelector(`.screenshot-btn[data-key="${lgId}"]`);
+    if (shotBtn) { shotBtn.style.display = ''; shotBtn.classList.add('has-shot'); }
+
+    // Also add the old inline link in the output-row log body (failure row)
+    if (!entry.groupBodyEl.querySelector('.screenshot-link')) {
+      const link = document.createElement('a');
+      link.className = 'screenshot-link';
+      link.href = '#'; link.rel = 'noopener noreferrer';
+      link.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> View failure screenshot`;
+      link.addEventListener('click', ev => { ev.preventDefault(); openScreenshotModal(url, entry.name); });
+      entry.groupBodyEl.appendChild(link);
+      entry.rowEl.classList.add('open');
+    }
   } catch (_) {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Detail-panel log viewer
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleDetailLog(btn) {
+  const lgId = btn.dataset.key;
+  const panel = document.getElementById('dlp-' + lgId);
+  if (!panel) return;
+  const isOpen = panel.classList.toggle('open');
+  btn.classList.toggle('active', isOpen);
+  if (isOpen) {
+    const body = document.getElementById('dlb-' + lgId);
+    if (body) body.scrollTop = body.scrollHeight;
+  }
+}
+
+function refreshDetailLog(key) {
+  const e = testMap.get(key);
+  if (!e) return;
+  const lgId = `lg-${key.replace(/[^a-z0-9]/gi, '-')}`;
+  const body = document.getElementById('dlb-' + lgId);
+  if (!body) return;
+  body.innerHTML = '';
+  if (!e.logLines.length) {
+    body.innerHTML = '<span class="detail-log-empty">No log output yet.</span>';
+    return;
+  }
+  for (const { line, cls } of e.logLines) {
+    const span = document.createElement('span');
+    const llCls = cls === 'pass' ? 'll-pass' : cls === 'fail' ? 'll-fail' : cls === 'warn' ? 'll-warn'
+                : cls === 'info' ? 'll-info' : cls === 'stderr' ? 'll-stderr'
+                : (cls === 'detail' || cls === 'sep' || cls === 'muted') ? 'll-dim' : '';
+    if (llCls) span.className = llCls;
+    span.textContent = line;
+    body.appendChild(span);
+    body.appendChild(document.createTextNode('\n'));
+  }
+  // Update line count badge
+  const countEl = document.querySelector(`.log-toggle-btn[data-key="${lgId}"] .log-line-count`);
+  if (countEl) countEl.textContent = `(${e.logLines.length})`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Screenshot modal
+// ─────────────────────────────────────────────────────────────────────────────
+function openScreenshotForKey(btn) {
+  const lgId = btn.dataset.key;
+  // Find the testMap entry whose lgId matches
+  for (const [key, e] of testMap) {
+    const eid = `lg-${key.replace(/[^a-z0-9]/gi, '-')}`;
+    if (eid === lgId && e.screenshotUrl) {
+      openScreenshotModal(e.screenshotUrl, e.name);
+      return;
+    }
+  }
+}
+
+function openScreenshotModal(url, testName) {
+  const modal = document.getElementById('screenshot-modal');
+  const img   = document.getElementById('screenshot-modal-img');
+  const title = document.getElementById('screenshot-modal-title');
+  const link  = document.getElementById('screenshot-modal-link');
+  const lbl   = document.getElementById('screenshot-modal-label');
+  img.src   = url;
+  title.textContent = testName || 'Screenshot';
+  link.href = url;
+  lbl.textContent   = url.split('/').pop();
+  modal.classList.add('open');
+  document.addEventListener('keydown', _modalEscListener);
+}
+
+function closeScreenshotModal() {
+  document.getElementById('screenshot-modal').classList.remove('open');
+  document.getElementById('screenshot-modal-img').src = '';
+  document.removeEventListener('keydown', _modalEscListener);
+}
+
+function _modalEscListener(e) {
+  if (e.key === 'Escape') closeScreenshotModal();
 }
 
 function appendToTestLog(key, line, cls) {
   const e = testMap.get(key);
   if (!e || !line.trim()) return;
+
+  // Store for the detail-panel log viewer
+  e.logLines.push({ line, cls });
+  refreshDetailLog(key);
 
   if (cls === 'fixture' || cls === 'step') {
     const variant = stepVariant(line, cls);

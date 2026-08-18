@@ -3,6 +3,8 @@ import cors from 'cors';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, spawnSync, ChildProcess } from 'child_process';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -55,9 +57,166 @@ function canonicalTestName(name: string): string {
   return name.replace(/\s+in\s+(chrome|firefox|safari)$/i, '').trim();
 }
 
+// Extract the body of a test's async callback.
+// test('name', async ({ ... }) => { BODY }) — we want BODY.
+// Strategy: find the last opening brace before the next top-level test() or describe() call,
+// then count braces from that point to get the balanced body.
+function extractTestBody(src: string, bodyStart: number): string {
+  // Find the opening brace of the async callback body.
+  // The test call looks like: test('name', async (...) => { body })
+  // bodyStart points to the first '{' after 'test('. We want the '{' that opens
+  // the arrow function body, which is after the '=>'.
+  const arrowIdx = src.indexOf('=>', bodyStart);
+  if (arrowIdx === -1) return src.slice(bodyStart, Math.min(bodyStart + 3000, src.length));
+  const cbBodyStart = src.indexOf('{', arrowIdx);
+  if (cbBodyStart === -1) return '';
+
+  let depth = 0;
+  let i = cbBodyStart;
+  while (i < src.length && i < cbBodyStart + 8000) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(cbBodyStart + 1, i); }
+    i++;
+  }
+  return src.slice(cbBodyStart + 1, Math.min(cbBodyStart + 3000, src.length));
+}
+
+// Extract human-readable test steps from a test body.
+// Scans for meaningful patterns: navigations, logins, assertions, polls, clicks, screenshots, waits.
+function extractTestSteps(src: string, bodyStart: number): string[] {
+  const bodySnippet = extractTestBody(src, bodyStart);
+  const lines = bodySnippet.split('\n');
+  const steps: string[] = [];
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('//') || line === '{' || line === '}') continue;
+
+    // Navigate
+    const navM = line.match(/(?:goto|navigate|page\.goto)\s*\(\s*['"`]([^'"`]+)['"`]/);
+    if (navM) { steps.push(`Navigate to ${navM[1]}`); continue; }
+
+    const navVarM = line.match(/(?:goto|navigate)\s*\(\s*(\w[\w.]*)\s*[,)]/);
+    if (navVarM) { steps.push(`Navigate to ${navVarM[1]}`); continue; }
+
+    // Login call
+    if (/webdriverLogin\s*\(/.test(line)) {
+      steps.push('Log in to dashboard via WebDriver (email + password)');
+      continue;
+    }
+    if (/\blogin\s*\(/.test(line)) {
+      if (/wrong.password|intentional/i.test(line) || line.includes("'wrong-")) {
+        steps.push('Submit login form with incorrect password');
+      } else {
+        steps.push('Submit login form with valid credentials (email + password)');
+      }
+      continue;
+    }
+
+    // waitForLoginSuccess
+    if (/waitForLoginSuccess/.test(line)) { steps.push('Wait for login redirect to complete'); continue; }
+
+    // clearAuth / clearSession
+    if (/clearAuth|clearSession/.test(line)) { steps.push('Clear authentication state and extension storage'); continue; }
+
+    // openPopup / openExtensionPopup
+    if (/openPopup|openExtensionPopup/.test(line)) { steps.push('Open extension popup'); continue; }
+    if (/closePopup/.test(line)) { steps.push('Close extension popup'); continue; }
+
+    // poll
+    if (/extSession\.poll|page\.waitFor|expect\.poll/.test(line)) {
+      // Look ahead up to 10 lines to determine what this poll is checking
+      const lineIdx = lines.indexOf(raw);
+      const lookAhead = lines.slice(lineIdx, lineIdx + 12).join(' ');
+      if (/isConnectedState|connected.state/i.test(lookAhead)) {
+        steps.push('Poll popup every 3–5s until extension shows connected state (up to 3 min)');
+      } else if (/authenticate/i.test(lookAhead) && /test/i.test(lookAhead)) {
+        steps.push('Poll popup until Authenticate button appears (unauthenticated state confirmed)');
+      } else if (/body.*length.*greater|popup.*not.*empty/i.test(lookAhead)) {
+        steps.push('Poll popup until it renders visible content (non-empty body)');
+      } else if (/isLoaded|dashboard/i.test(lookAhead)) {
+        steps.push('Poll until dashboard page has fully loaded');
+      } else {
+        steps.push('Poll for expected condition');
+      }
+      continue;
+    }
+
+    // Reload
+    if (/\.reload\s*\(/.test(line)) { steps.push('Reload page and wait for dashboard to load'); continue; }
+
+    // screenshot
+    if (/screenshot\s*\(/.test(line)) {
+      const pathM = line.match(/path:\s*['"`]([^'"`]+)['"`]/) || line.match(/screenshots\/([^'"`\s)]+)/);
+      steps.push(`Capture screenshot${pathM ? ` (${pathM[1].split('/').pop()})` : ''}`);
+      continue;
+    }
+
+    // expect assertions
+    const expectVisM = line.match(/expect.*getByTestId\(['"`]([^'"`]+)['"`]\).*toBeVisible/);
+    if (expectVisM) { steps.push(`Assert "${expectVisM[1]}" element is visible`); continue; }
+
+    const expectUrlM = line.match(/expect.*url.*toMatch.*['"`]([^'"`]+)['"`]/i);
+    if (expectUrlM) { steps.push(`Assert URL matches ${expectUrlM[1]}`); continue; }
+
+    const expectTrueM = line.match(/expect\s*\(([^,)]{3,60}),\s*['"`]([^'"`]{5,80})['"`]\s*\)\.toBe\(true\)/);
+    if (expectTrueM) { steps.push(`Assert: ${expectTrueM[2]}`); continue; }
+
+    const expectGtM = line.match(/expect\s*\(([^,)]{3,60}),\s*['"`]([^'"`]{5,80})['"`]\s*\)\.toBeGreaterThan/);
+    if (expectGtM) { steps.push(`Assert: ${expectGtM[2]}`); continue; }
+
+    const expectFalseM = line.match(/expect\s*\(([^,)]{3,60}),\s*['"`]([^'"`]{5,80})['"`]\s*\)\.toBe\(false\)/);
+    if (expectFalseM) { steps.push(`Assert: ${expectFalseM[2]}`); continue; }
+
+    // hasSidebarNav / isLoaded
+    if (/hasSidebarNav/.test(line)) { steps.push('Check sidebar navigation is visible'); continue; }
+    if (/dashboard\.isLoaded/.test(line)) { steps.push('Check dashboard page has loaded'); continue; }
+
+    // isLoginErrorVisible
+    if (/isLoginErrorVisible/.test(line)) { steps.push('Check login error message is visible'); continue; }
+
+    // extSession.navigate
+    if (/extSession\.navigate/.test(line)) {
+      const u = line.match(/navigate\s*\(\s*(['"`][^'"`]+['"`]|\w+)/);
+      steps.push(`Navigate browser to ${u ? u[1].replace(/['"`]/g, '') : 'URL'}`);
+      continue;
+    }
+
+    // deleteAllCookies / execute localStorage.clear
+    if (/deleteAllCookies/.test(line)) { steps.push('Delete all browser cookies'); continue; }
+    if (/localStorage\.clear|sessionStorage\.clear/.test(line)) { steps.push('Clear localStorage and sessionStorage'); continue; }
+
+    // logout navigation
+    if (/\/api\/logout/.test(line)) { steps.push('Navigate to logout endpoint'); continue; }
+
+    // expect(extId)
+    if (/expect\s*\(extId/.test(line)) { steps.push('Assert extension ID is non-empty (extension loaded successfully)'); continue; }
+
+    // skip console.log — debug output, not a test step
+  }
+
+  // Deduplicate consecutive identical steps
+  const deduped: string[] = [];
+  for (const s of steps) {
+    if (deduped[deduped.length - 1] !== s) deduped.push(s);
+  }
+
+  // Resolve known variable names and template literals to actual values
+  const BASE_URL   = (process.env.SQRX_BASE_URL ?? '').replace(/\/$/, '');
+  const EMAIL      = process.env.EXTENSION_LOGIN_EMAIL ?? '';
+
+  return deduped.map(s =>
+    s
+      .replace(/\bBASE_URL\b/g, BASE_URL || 'BASE_URL')
+      .replace(/\bEMAIL\b/g, EMAIL || 'EMAIL')
+      .replace(/\$\{extSession\.browser\}/g, '[browser]')
+      .replace(/\$\{[^}]+\}/g, '[value]')
+  );
+}
+
 // GET /api/catalogue — parse spec files and return suite/test structure
 app.get('/api/catalogue', (_req, res) => {
-  const result: Array<{ suite: string; id: number; name: string; canonicalName: string; file: string; description: string; validation: string; browser: string }> = [];
+  const result: Array<{ suite: string; id: number; name: string; canonicalName: string; file: string; description: string; validation: string; browser: string; steps: string[] }> = [];
 
   function walk(dir: string, rel: string) {
     if (!fs.existsSync(dir)) return;
@@ -98,7 +257,9 @@ app.get('/api/catalogue', (_req, res) => {
               if (msgs.length) validation = msgs.join('; ');
             }
           }
-          result.push({ suite, id: id++, name: m[1], canonicalName: canonicalTestName(m[1]), file: relPath, description, validation, browser: fileToBrowser(relPath) });
+          const bodyStart = src.indexOf('{', m.index);
+          const steps = bodyStart !== -1 ? extractTestSteps(src, bodyStart) : [];
+          result.push({ suite, id: id++, name: m[1], canonicalName: canonicalTestName(m[1]), file: relPath, description, validation, browser: fileToBrowser(relPath), steps });
         }
       }
     }

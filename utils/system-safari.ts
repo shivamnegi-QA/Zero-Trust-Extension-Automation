@@ -43,6 +43,65 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// Returns the full screen bounds {w, h} by querying the Finder desktop.
+function getScreenBounds(): { w: number; h: number } {
+  try {
+    const out = cp.execSync(
+      `osascript -e 'tell application "Finder" to get bounds of window of desktop'`,
+      { timeout: 5_000 }
+    ).toString().trim();
+    // Format: "0, 0, W, H"
+    const parts = out.split(',').map(s => parseInt(s.trim(), 10));
+    if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+      return { w: parts[2], h: parts[3] };
+    }
+  } catch { /* fall through */ }
+  return { w: 1440, h: 900 };
+}
+
+// Bring Safari to the foreground synchronously. Call before any AX interaction.
+export function activateSafari(): void {
+  runOsa(`
+tell application "Safari" to activate
+delay 0.3
+try
+  tell application "System Events"
+    tell process "Safari"
+      set frontmost to true
+    end tell
+  end tell
+end try
+`);
+}
+
+// Maximizes the front Safari window to fill the full screen.
+export function maximizeSafariWindow(): void {
+  const { w, h } = getScreenBounds();
+  runOsa(`
+tell application "Safari"
+  activate
+  try
+    set bounds of front window to {0, 0, ${w}, ${h}}
+  end try
+end tell
+`);
+}
+
+// Maximizes ALL open Safari windows to fill the full screen.
+function maximizeAllSafariWindows(): void {
+  const { w, h } = getScreenBounds();
+  runOsa(`
+tell application "Safari"
+  activate
+  repeat with win in every window
+    try
+      set bounds of win to {0, 0, ${w}, ${h}}
+    end try
+  end repeat
+end tell
+`);
+}
+
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -167,7 +226,7 @@ end tell
 `);
   await sleep(1500);
 
-  // Click Extensions tab in the Settings/Preferences window
+  // Click Extensions tab — use title "Extensions" (not description which is just "button")
   runOsa(`
 tell application "System Events"
   tell process "Safari"
@@ -176,8 +235,7 @@ tell application "System Events"
         set tb to toolbar 1 of w
         repeat with btn in (every button of tb)
           try
-            set bdesc to description of btn
-            if bdesc contains "xtension" then
+            if (title of btn) is "Extensions" then
               click btn
               delay 0.5
               return "ok"
@@ -191,98 +249,73 @@ end tell
 `);
   await sleep(1000);
 
-  // The Extensions table path (verified interactively):
-  // table 1 of scroll area 1 of group 2 of group 1 of group 1 of <settings window>
-  // Find the settings window by listing all window names with a newline delimiter
-  const winNames = runOsa(`
+  // Verify ZT extension row is present in the Extensions table.
+  // macOS 26: no per-row enable checkbox; extension state is managed via the system installer.
+  // Verified AX path (macOS 26): table 1 of scroll area 1 of group 1 of group 1 of UI element 1 of window "Extensions"
+  const result = runOsa(`
 tell application "System Events"
   tell process "Safari"
-    set wc to count of windows
-    set names to ""
-    repeat with i from 1 to wc
+    -- Poll up to 10s for a window that contains the extensions table
+    -- macOS 26: table is in group 2 of wrapper when no row selected, group 1 when selected
+    set extWin to missing value
+    set tblRef to missing value
+    repeat 20 times
+      repeat with w in (every window)
+        try
+          set wrapper to group 1 of UI element 1 of w
+          try
+            set t to table 1 of scroll area 1 of group 2 of wrapper
+            if (count of every row of t) > 0 then
+              set extWin to w
+              set tblRef to t
+              exit repeat
+            end if
+          end try
+          try
+            set t to table 1 of scroll area 1 of group 1 of wrapper
+            if (count of every row of t) > 0 then
+              set extWin to w
+              set tblRef to t
+              exit repeat
+            end if
+          end try
+        end try
+      end repeat
+      if extWin is not missing value then exit repeat
+      delay 0.5
+    end repeat
+    if extWin is missing value then return "no_extensions_window"
+    set rowCount to count of every row of tblRef
+    repeat with i from 1 to rowCount
       try
-        set wn to name of window i
-        if names is "" then
-          set names to wn
-        else
-          set names to names & linefeed & wn
+        set cellPath to UI element 1 of row i of tblRef
+        set rowName to value of static text 1 of cellPath
+        if rowName contains "Zero Trust" then
+          return "found_row:" & i
         end if
       end try
     end repeat
-    return names
+    return "not_found"
   end tell
 end tell
 `);
+  console.log(`${tag} Extension check: ${result}`);
 
-  const candidates = [...new Set(winNames.split('\n').map(n => n.trim()))].filter(n =>
-    n && !n.includes('about:blank') && !n.includes('Personal —') && n.length > 0
-  );
-
-  console.log(`${tag} Looking for Extensions in windows: ${candidates.join(', ')}`);
-
-  let found = false;
-  for (const winName of candidates) {
-    const tablePath = `table 1 of scroll area 1 of group 2 of group 1 of group 1 of window "${winName}"`;
-    const rowCount = runOsa(`tell application "System Events" to tell process "Safari" to return count of every row of ${tablePath}`);
-    const n = parseInt(rowCount, 10) || 0;
-    if (n === 0) continue;
-
-    console.log(`${tag} Found extensions table in window "${winName}" with ${n} rows`);
-
-    for (let i = 1; i <= n; i++) {
-      const cellPath = `UI element 1 of row ${i} of ${tablePath}`;
-      const rowName = runOsa(`tell application "System Events" to tell process "Safari" to return value of static text 1 of ${cellPath}`);
-      if (!rowName.includes('Zero Trust')) continue;
-
-      const cbVal = runOsa(`tell application "System Events" to tell process "Safari" to return value of checkbox 1 of ${cellPath}`);
-      if (cbVal !== '1') {
-        console.log(`${tag} Enabling extension in row ${i} of "${winName}"`);
-        runOsa(`tell application "System Events" to tell process "Safari" to click checkbox 1 of ${cellPath}`);
-        await sleep(500);
-        // Handle permission dialog
-        runOsa(`
-tell application "System Events"
-  tell process "Safari"
-    repeat with w in (every window)
-      try
-        repeat with sht in (every sheet of w)
-          repeat with btn in (every button of sht)
-            set bname to name of btn
-            if bname contains "Turn On" or bname contains "Allow" or bname contains "OK" then
-              click btn
-              return "dismissed"
-            end if
-          end repeat
-        end repeat
-      end try
-    end repeat
-  end tell
-end tell
-`);
-      } else {
-        console.log(`${tag} Extension already enabled in row ${i}`);
-      }
-      found = true;
-    }
-    if (found) break;
-  }
-
-  if (!found) {
-    console.log(`${tag} Could not find ZT extension in Extensions table — may already be enabled`);
-  }
-
-  // Close settings/preferences window
+  // Close settings window by looking for known Settings panel names
   runOsa(`
 tell application "System Events"
   tell process "Safari"
+    set settingsNames to {"Extensions", "General", "Developer", "Privacy", "Websites", "Search", "AutoFill", "Passwords", "Advanced", "Tabs"}
     repeat with w in (every window)
-      set wname to name of w
-      if wname is not missing value and wname does not contain "Personal" and wname does not contain "blank" then
-        try
-          click button 1 of w
-        end try
-        exit repeat
-      end if
+      try
+        set wname to name of w as string
+        repeat with sn in settingsNames
+          if wname is (sn as string) then
+            click button 1 of w
+            return "closed:" & wname
+          end if
+        end repeat
+      end try
     end repeat
   end tell
 end tell
@@ -290,7 +323,7 @@ end tell
   await sleep(500);
 }
 
-async function enableRemoteAutomation(tag: string): Promise<void> {
+async function enableRemoteAutomation(tag: string): Promise<string> {
   // Open Develop > Developer Settings… via menu bar
   runOsa(`
 tell application "System Events"
@@ -373,6 +406,7 @@ tell application "System Events"
 end tell
 `);
   await sleep(300);
+  return result;
 }
 
 // ── Popup helpers via osascript AX ────────────────────────────────────────────
@@ -404,8 +438,12 @@ end tell
 // Returns body text on success, or '__not_found__' if ZT button not found.
 export function openAndReadSafariPopup(): string {
   const result = runOsa(`
+-- Bring Safari to front before any AX interaction so clicks land on it
+tell application "Safari" to activate
+delay 0.4
 tell application "System Events"
   tell process "Safari"
+    set frontmost to true
     -- Close any open popup first
     key code 53
     delay 0.3
@@ -428,8 +466,24 @@ tell application "System Events"
       if ztBtn is not missing value then exit repeat
     end repeat
     if ztBtn is missing value then return "__not_found__"
-    -- Bring window to front and open popup via coordinate click
-    -- (AXPress opens context menu when multiple windows exist; coordinate click opens the popup)
+    -- Close any Settings/Developer windows that may be covering the browser window
+    set settingsNames to {"Developer", "Extensions", "General", "Privacy", "Websites", "Search", "AutoFill", "Passwords", "Advanced", "Tabs"}
+    repeat with w in (every window)
+      try
+        set wn to name of w as string
+        repeat with sn in settingsNames
+          if wn is (sn as string) then
+            try
+              click button 1 of w
+            end try
+            delay 0.2
+            exit repeat
+          end if
+        end repeat
+      end try
+    end repeat
+    delay 0.3
+    -- Bring the browser window to front
     set frontmost to true
     perform action "AXRaise" of window ztWin
     delay 0.5
@@ -442,15 +496,16 @@ tell application "System Events"
     set cy to (item 2 of btnPos) + (item 2 of btnSz) / 2
     click at {cx, cy}
     delay 2.5
-    -- If popup didn't open (popover count is 0), retry click once more
-    if (count of every pop over of ztBtn) is 0 then
-      -- Ensure window still focused before retry
+    -- Retry up to 3 more times if popup didn't open
+    set retries to 0
+    repeat while (count of every pop over of ztBtn) is 0 and retries < 3
       set frontmost to true
       perform action "AXRaise" of window ztWin
       delay 0.5
       click at {cx, cy}
       delay 2.5
-    end if
+      set retries to retries + 1
+    end repeat
     -- Strategy 1: popup as AXPopover on the toolbar button
     set webArea to missing value
     if (count of every pop over of ztBtn) > 0 then
@@ -632,8 +687,11 @@ end tell
 export function closeSafariPopupViaAX(): void {
   // Press Escape to dismiss any open popup/popover
   runOsa(`
+tell application "Safari" to activate
+delay 0.2
 tell application "System Events"
   tell process "Safari"
+    set frontmost to true
     key code 53
     delay 0.1
     -- Also check toolbar button and AXPress if popover still present
@@ -753,8 +811,11 @@ end if
 
 export function getSafariPopupBodyText(): string {
   return runOsa(`
+tell application "Safari" to activate
+delay 0.2
 tell application "System Events"
   tell process "Safari"
+    set frontmost to true
     ${FIND_WEBAREA_FRAGMENT}
     if webArea is missing value then return ""
     set allText to {}
@@ -855,6 +916,332 @@ tell application "System Events"
 end tell
 `);
   return result.startsWith('clicked');
+}
+
+/**
+ * Deep-click in the Safari extension popup: searches all UI elements recursively up to 5 levels
+ * to find a button/element whose description, title, or static-text value contains `textMatch`.
+ * Returns true if something was clicked.
+ */
+export function clickInSafariPopupDeep(textMatch: string): boolean {
+  const safe = escapeAppleScriptString(textMatch);
+  const result = runOsa(`
+tell application "System Events"
+  tell process "Safari"
+    ${FIND_WEBAREA_FRAGMENT}
+    if webArea is missing value then return "not_found"
+
+    -- Recursive helper: search up to depth levels inside a container
+    -- Returns "clicked" or "not_found"
+    set foundResult to "not_found"
+    set todo to {webArea}
+    set depth to 0
+    repeat while (count of todo) > 0 and depth < 200
+      set nextTodo to {}
+      repeat with container in todo
+        try
+          repeat with el in (every UI element of container)
+            try
+              set r to role of el
+              set matchThis to false
+              -- Match by description
+              try
+                if (description of el) contains "${safe}" then set matchThis to true
+              end try
+              -- Match by title
+              try
+                if (title of el) contains "${safe}" then set matchThis to true
+              end try
+              -- Match by static text value inside this element
+              try
+                repeat with t in (every static text of el)
+                  if (value of t) contains "${safe}" then set matchThis to true
+                end repeat
+              end try
+              if matchThis then
+                -- Prefer click over AXPress to avoid toggling popovers
+                try
+                  click el
+                  set foundResult to "clicked"
+                  return foundResult
+                end try
+                try
+                  perform action "AXPress" of el
+                  set foundResult to "clicked"
+                  return foundResult
+                end try
+              end if
+              -- Queue children for next iteration
+              set end of nextTodo to el
+            end try
+          end repeat
+        end try
+      end repeat
+      set todo to nextTodo
+      set depth to depth + 1
+    end repeat
+    return foundResult
+  end tell
+end tell
+`);
+  return result.startsWith('clicked');
+}
+
+/**
+ * Type text into a text field in the Safari extension popup.
+ * Finds the first AXTextField (or AXSecureTextField) that is currently visible/focusable,
+ * or optionally one whose nearby label contains `labelMatch`.
+ */
+export function typeInSafariPopup(text: string, labelMatch?: string): boolean {
+  const safeText  = escapeAppleScriptString(text);
+  const safeLabel = labelMatch ? escapeAppleScriptString(labelMatch) : '';
+  const result = runOsa(`
+tell application "System Events"
+  tell process "Safari"
+    ${FIND_WEBAREA_FRAGMENT}
+    if webArea is missing value then return "not_found"
+    set allFields to {}
+    -- Collect all text fields up to 4 levels deep
+    repeat with e1 in (every UI element of webArea)
+      try
+        if (role of e1) is "AXTextField" or (role of e1) is "AXSecureTextField" then
+          set end of allFields to e1
+        end if
+        repeat with e2 in (every UI element of e1)
+          try
+            if (role of e2) is "AXTextField" or (role of e2) is "AXSecureTextField" then
+              set end of allFields to e2
+            end if
+            repeat with e3 in (every UI element of e2)
+              try
+                if (role of e3) is "AXTextField" or (role of e3) is "AXSecureTextField" then
+                  set end of allFields to e3
+                end if
+              end try
+            end repeat
+          end try
+        end repeat
+      end try
+    end repeat
+    if (count of allFields) is 0 then return "not_found"
+    -- If label specified, try to match; otherwise just use first field
+    set targetField to item 1 of allFields
+    if "${safeLabel}" is not "" then
+      repeat with f in allFields
+        try
+          if (value of f) contains "${safeLabel}" then
+            set targetField to f
+            exit repeat
+          end if
+        end try
+      end repeat
+    end if
+    set focused of targetField to true
+    delay 0.2
+    -- Clear existing value
+    set value of targetField to ""
+    delay 0.1
+    keystroke "a" using command down
+    delay 0.05
+    keystroke "${safeText}"
+    return "typed"
+  end tell
+end tell
+`);
+  return result === 'typed';
+}
+
+/**
+ * Clear ZTB Safari extension storage via the "Clear Storage…" button in Safari Settings → Extensions.
+ * This wipes browser.storage.local so the extension re-evaluates auth state from scratch.
+ * Called from clearAuth to ensure the popup shows "Authenticate" after cookies are cleared.
+ *
+ * macOS 26: the Extensions tab has no per-row checkbox toggle; the detail panel has
+ * "Clear Storage…" (AXButton title="Clear Storage…" at UI element 5 of group 2 of group 1
+ * of group 1 of window "Extensions") which is the reliable way to reset extension state.
+ */
+export async function reloadSafariExtension(tag = '[reload-ext]'): Promise<void> {
+  // Open Safari Settings → Extensions tab
+  runOsa(`
+tell application "Safari" to activate
+delay 0.8
+tell application "System Events"
+  tell process "Safari"
+    set frontmost to true
+    delay 0.3
+    keystroke "," using {command down}
+  end tell
+end tell
+`);
+  await sleep(1500);
+
+  // Click Extensions tab — use title "Extensions" (not description which is just "button")
+  runOsa(`
+tell application "System Events"
+  tell process "Safari"
+    repeat with w in (every window)
+      try
+        set tb to toolbar 1 of w
+        repeat with btn in (every button of tb)
+          try
+            if (title of btn) is "Extensions" then
+              click btn
+              delay 0.5
+              return "ok"
+            end if
+          end try
+        end repeat
+      end try
+    end repeat
+  end tell
+end tell
+`);
+  await sleep(1000);
+
+  // Select ZT extension row then click "Clear Storage…" in the detail panel.
+  // Verified AX paths (macOS 26):
+  //   Wrapper:      group 1 of UI element 1 of window "Extensions"
+  //   Table:        table 1 of scroll area 1 of group 1 of <wrapper>
+  //   Detail panel: group 2 of <wrapper>
+  //   Clear button: UI element 5 of <detail panel>  (AXButton title="Clear Storage…")
+  // Poll for the Extensions window and click Clear Storage for the ZT extension.
+  // macOS 26 AX structure (verified): window → el1(AXGroup) → wrapper(AXGroup, 3 children)
+  //   The two inner groups swap which one holds the table vs detail panel depending on selection.
+  //   Before selection: group2 has the table; after selection: group1 has the table, group2 has detail.
+  // Strategy: find the table in either group, select ZT row, then find the group with "Clear Storage…" button.
+  const result = runOsa(`
+tell application "System Events"
+  tell process "Safari"
+    -- Poll up to 10s for a window that contains the extensions table
+    set extWin to missing value
+    set tblRef to missing value
+    repeat 20 times
+      repeat with w in (every window)
+        try
+          set wrapper to group 1 of UI element 1 of w
+          -- Try group 2 first (default no-selection layout)
+          try
+            set t to table 1 of scroll area 1 of group 2 of wrapper
+            if (count of every row of t) > 0 then
+              set extWin to w
+              set tblRef to t
+              exit repeat
+            end if
+          end try
+          -- Try group 1 (post-selection layout)
+          try
+            set t to table 1 of scroll area 1 of group 1 of wrapper
+            if (count of every row of t) > 0 then
+              set extWin to w
+              set tblRef to t
+              exit repeat
+            end if
+          end try
+        end try
+      end repeat
+      if extWin is not missing value then exit repeat
+      delay 0.5
+    end repeat
+    if extWin is missing value then return "no_extensions_window"
+
+    -- Find and select the ZT row
+    set wrapper to group 1 of UI element 1 of extWin
+    set rowCount to count of every row of tblRef
+    set ztRowIdx to 0
+    repeat with i from 1 to rowCount
+      set cellPath to UI element 1 of row i of tblRef
+      try
+        set rowName to value of static text 1 of cellPath
+        if rowName contains "Zero Trust" then
+          set ztRowIdx to i
+          exit repeat
+        end if
+      end try
+    end repeat
+    if ztRowIdx is 0 then return "zt_row_not_found"
+
+    select row ztRowIdx of tblRef
+    delay 0.8
+
+    -- After selection, the detail panel is in whichever group (1 or 2) has 6 children
+    -- and contains a "Clear Storage…" button (UI element 5)
+    set detailGroup to missing value
+    try
+      set g1 to group 1 of wrapper
+      set g2 to group 2 of wrapper
+      if (count of every UI element of g1) >= 5 then
+        try
+          if (title of UI element 5 of g1) contains "Clear" then
+            set detailGroup to g1
+          end if
+        end try
+      end if
+      if detailGroup is missing value and (count of every UI element of g2) >= 5 then
+        try
+          if (title of UI element 5 of g2) contains "Clear" then
+            set detailGroup to g2
+          end if
+        end try
+      end if
+    end try
+    if detailGroup is missing value then
+      -- Fallback: try direct children of whatever g2wc1 is
+      try
+        set g2wc1 to UI element 1 of group 2 of wrapper
+        if (count of every UI element of g2wc1) >= 5 then
+          if (title of UI element 5 of g2wc1) contains "Clear" then
+            set detailGroup to g2wc1
+          end if
+        end if
+      end try
+    end if
+    if detailGroup is missing value then return "detail_panel_not_found"
+
+    set clearBtn to UI element 5 of detailGroup
+    if (title of clearBtn) contains "Clear" then
+      click clearBtn
+      delay 0.5
+      -- Dismiss confirmation sheet if any
+      repeat with sht in (every sheet of extWin)
+        repeat with btn in (every button of sht)
+          set bname to name of btn
+          if bname contains "Clear" or bname is "OK" or bname contains "Delete" then
+            click btn
+            exit repeat
+          end if
+        end repeat
+      end repeat
+      delay 0.5
+      return "cleared"
+    else
+      return "clear_btn_not_found:" & (title of clearBtn)
+    end if
+  end tell
+end tell
+`);
+
+  console.log(`${tag} Clear storage result: ${result}`);
+
+  // Close settings window — look specifically for Extensions/General/Developer (Settings panel names)
+  runOsa(`
+tell application "System Events"
+  tell process "Safari"
+    set settingsNames to {"Extensions", "General", "Developer", "Privacy", "Websites", "Search", "AutoFill", "Passwords", "Advanced", "Tabs"}
+    repeat with w in (every window)
+      try
+        set wname to name of w as string
+        repeat with sn in settingsNames
+          if wname is (sn as string) then
+            click button 1 of w
+            return "closed:" & wname
+          end if
+        end repeat
+      end try
+    end repeat
+  end tell
+end tell
+`);
+  await sleep(500);
 }
 
 export function screenshotSafariPopup(filePath: string): void {
@@ -981,8 +1368,17 @@ export class SdSession {
 
   // Opens the extension popup via AX and returns the body text.
   // Click + read happen in a single osascript call so the popup doesn't close between them.
+  // If Safari isn't ready yet (returns ""), waits up to 15s and retries.
   async openExtensionPopup(): Promise<{ bodyText: string }> {
-    const bodyText = openAndReadSafariPopup();
+    let bodyText = '';
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      activateSafari();
+      bodyText = openAndReadSafariPopup();
+      if (bodyText !== '' && bodyText !== '__not_found__') break;
+      if (bodyText === '__not_found__') break;
+      await sleep(1500);
+    }
     if (bodyText === '__not_found__') {
       throw new Error('Could not click Zero Trust toolbar button — extension may not be in toolbar');
     }
@@ -1064,35 +1460,19 @@ export async function launchSafariWithExtension(opts: {
   // ── 5. Ensure extension is enabled in Safari prefs ───────────────────────
   await ensureExtensionEnabled(tag);
 
-  // ── 6. Enable "Allow Remote Automation" ──────────────────────────────────
-  await enableRemoteAutomation(tag);
-
-  // ── 7. Kill any stale safaridriver / Safari pairing ──────────────────────
+  // ── 6. Kill stale safaridriver (never kill Safari itself upfront) ────────
   shellExec('pkill -f safaridriver', 5_000);
   await sleep(500);
 
-  // Restart Safari to clear any stale WebDriver pairing
-  const safariPids = shellExec("pgrep -x Safari").split('\n').filter(Boolean);
-  for (const pid of safariPids) {
-    try { process.kill(parseInt(pid, 10), 'SIGTERM'); } catch { /* gone */ }
-  }
-  await sleep(1000);
-  cp.exec('open -a Safari', () => {});
-  await sleep(2000);
-
-  // Navigate to about:blank so the extension toolbar button appears
-  runOsa(`tell application "Safari" to set URL of front document to "about:blank"`);
-  await sleep(1000);
-
-  // ── 8. Start safaridriver ─────────────────────────────────────────────────
+  // ── 7. Start safaridriver ─────────────────────────────────────────────────
   const sdPort = await getFreePort();
-  const driver = cp.spawn(SAFARIDRIVER, [`--port=${sdPort}`], {
+  let driverProc = cp.spawn(SAFARIDRIVER, [`--port=${sdPort}`], {
     stdio: ['ignore', 'pipe', 'ignore'],
     detached: false,
   });
 
   const teardown = async (): Promise<void> => {
-    driver.kill('SIGTERM');
+    driverProc.kill('SIGTERM');
     await sleep(400);
   };
 
@@ -1112,61 +1492,69 @@ export async function launchSafariWithExtension(opts: {
     // ── 9. Start background osascript poller to auto-dismiss "remotely controlled" banner
     const bannerDismissScript = `
 repeat
-  tell application "System Events"
-    tell process "Safari"
-      set wc to count of windows
-      repeat with wi from 1 to wc
-        try
-          -- Check for sheets attached to windows
-          repeat with sht in (every sheet of window wi)
-            repeat with btn in (every button of sht)
-              set bname to name of btn
-              if bname contains "Continue" or bname contains "Allow" or bname is "OK" or bname is "Close" then
-                -- Focus the sheet's parent window before clicking
-                set frontmost to true
-                perform action "AXRaise" of window wi
-                delay 0.1
-                click btn
-                exit repeat
-              end if
-            end repeat
-          end repeat
-        end try
-        try
-          -- Check for the banner as a standalone AXDialog window
-          if (subrole of window wi) is "AXDialog" then
-            repeat with btn in (every button of window wi)
-              set bname to name of btn
-              if bname contains "Continue" or bname contains "Allow" or bname is "OK" then
-                -- Raise and focus the dialog before clicking
-                set frontmost to true
-                perform action "AXRaise" of window wi
-                delay 0.1
-                click btn
-                exit repeat
-              end if
-            end repeat
-          end if
-        end try
-        try
-          -- Check for "Continue Session" button anywhere in the window (banner style)
-          repeat with btn in (every button of window wi)
+  try
+    tell application "System Events"
+      tell process "Safari"
+        set wc to count of windows
+        repeat with wi from 1 to wc
+          try
+            set w to window wi
+            -- Check for sheets attached to windows
             try
-              set bname to name of btn
-              if bname is "Continue Session" then
-                -- Raise and focus the window before clicking
-                set frontmost to true
-                perform action "AXRaise" of window wi
-                delay 0.1
-                click btn
-                exit repeat
+              repeat with sht in (every sheet of w)
+                try
+                  repeat with btn in (every button of sht)
+                    try
+                      set bname to name of btn
+                      if bname contains "Continue" or bname contains "Allow" or bname is "OK" or bname is "Close" then
+                        set frontmost to true
+                        perform action "AXRaise" of w
+                        delay 0.1
+                        click btn
+                        exit repeat
+                      end if
+                    end try
+                  end repeat
+                end try
+              end repeat
+            end try
+            -- Check for the banner as a standalone AXDialog window
+            try
+              if (subrole of w) is "AXDialog" then
+                repeat with btn in (every button of w)
+                  try
+                    set bname to name of btn
+                    if bname contains "Continue" or bname contains "Allow" or bname is "OK" then
+                      set frontmost to true
+                      perform action "AXRaise" of w
+                      delay 0.1
+                      click btn
+                      exit repeat
+                    end if
+                  end try
+                end repeat
               end if
             end try
-          end repeat
-        end try
-      end repeat
+            -- Check for "Continue Session" button anywhere in the window
+            try
+              repeat with btn in (every button of w)
+                try
+                  set bname to name of btn
+                  if bname is "Continue Session" then
+                    set frontmost to true
+                    perform action "AXRaise" of w
+                    delay 0.1
+                    click btn
+                    exit repeat
+                  end if
+                end try
+              end repeat
+            end try
+          end try
+        end repeat
+      end tell
     end tell
-  end tell
+  end try
   delay 0.5
 end repeat
 `;
@@ -1183,14 +1571,50 @@ end repeat
     };
 
     // ── 10. Create WebDriver session ──────────────────────────────────────────
-    const data = await session.json('POST', '/session', {
-      capabilities: {
-        alwaysMatch: {
-          browserName: 'safari',
-        },
-      },
-    }) as { value: { sessionId?: string; message?: string } };
+    // First attempt: try directly (Safari may already be running with remote automation on).
+    // If it fails with "must enable remote automation": enable it, restart Safari, retry.
+    // This avoids killing Safari when it's already working (one-window guarantee).
+    let sessionData: { value: { sessionId?: string; message?: string } } | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      sessionData = await session.json('POST', '/session', {
+        capabilities: { alwaysMatch: { browserName: 'safari' } },
+      }) as { value: { sessionId?: string; message?: string } };
 
+      if (sessionData?.value?.sessionId) break;
+
+      const msg = (sessionData?.value as any)?.message ?? '';
+      if (/remote automation/i.test(msg)) {
+        console.log(`${tag} Session creation failed (attempt ${attempt + 1}): remote automation not enabled — enabling and restarting Safari`);
+        // Enable remote automation via UI checkbox, then restart Safari so the setting takes effect.
+        await enableRemoteAutomation(tag);
+        await sleep(3000);
+        const safariPids = shellExec("pgrep -x Safari").split('\n').filter(Boolean);
+        for (const pid of safariPids) {
+          try { process.kill(parseInt(pid, 10), 'SIGTERM'); } catch { /* gone */ }
+        }
+        await sleep(3000);
+        console.log(`${tag} Safari restarted to apply remote automation preference`);
+        // Restart safaridriver so it pairs with the fresh Safari process.
+        driverProc.kill('SIGTERM');
+        await sleep(500);
+        driverProc = cp.spawn(SAFARIDRIVER, [`--port=${sdPort}`], {
+          stdio: ['ignore', 'pipe', 'ignore'],
+          detached: false,
+        });
+        const sdDeadline2 = Date.now() + 20_000;
+        while (Date.now() < sdDeadline2) {
+          try {
+            const r = await fetch(`http://127.0.0.1:${sdPort}/status`, { signal: AbortSignal.timeout(2000) });
+            if (r.ok) break;
+          } catch { await sleep(300); }
+        }
+        console.log(`${tag} safaridriver restarted on port ${sdPort}`);
+      } else {
+        break;
+      }
+    }
+
+    const data = sessionData!;
     if (!data?.value?.sessionId) {
       throw new Error(`Safari session creation failed: ${JSON.stringify(data).slice(0, 300)}`);
     }
@@ -1223,6 +1647,68 @@ tell application "System Events"
 end tell
 `);
     await sleep(500);
+
+    // Explicitly dismiss the "This Safari window is remotely controlled" dialog.
+    // This appears as window 1 with no toolbar — it blocks all AX interaction until dismissed.
+    // Poll up to 8s so we catch it even if it appears slightly after session creation.
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const dismissed = runOsa(`
+tell application "Safari" to activate
+delay 0.2
+tell application "System Events"
+  tell process "Safari"
+    set frontmost to true
+    set wc to count of windows
+    repeat with wi from 1 to wc
+      try
+        set w to window wi
+        -- Dialog has no toolbar — that's the distinguishing feature
+        set hasToolbar to false
+        try
+          set dummy to toolbar 1 of w
+          set hasToolbar to true
+        end try
+        if not hasToolbar then
+          repeat with btn in (every button of w)
+            try
+              set bname to name of btn
+              if bname is "Continue Session" or bname contains "Continue" then
+                perform action "AXRaise" of w
+                delay 0.1
+                click btn
+                return "dismissed"
+              end if
+            end try
+          end repeat
+        end if
+      end try
+    end repeat
+    return "not_found"
+  end tell
+end tell
+`);
+      if (dismissed.trim() === 'dismissed') {
+        console.log(`${tag} Dismissed "remotely controlled" dialog`);
+        await sleep(800);
+        break;
+      }
+      await sleep(500);
+    }
+
+    // Maximize the Safari window to fill the full screen
+    maximizeSafariWindow();
+    await sleep(400);
+
+    // Navigate to BASE_URL so the window opens on a real page, not a blank tab
+    const baseUrl = process.env.SQRX_BASE_URL ?? '';
+    if (baseUrl) {
+      await session.navigate(baseUrl).catch(() => {});
+      await sleep(1500);
+      // Re-maximize after navigation in case the page resize changed window bounds
+      maximizeSafariWindow();
+      await sleep(300);
+      console.log(`${tag} Navigated to base URL (full screen)`);
+    }
 
     return { session, teardown: teardownWithCleanup };
 

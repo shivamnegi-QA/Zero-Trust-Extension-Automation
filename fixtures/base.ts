@@ -8,7 +8,7 @@ const IS_WINDOWS = process.platform === 'win32';
 
 const EXTENSION_PATH = process.env.EXTENSION_PATH
   ? path.resolve(process.env.EXTENSION_PATH)
-  : path.resolve(IS_WINDOWS ? 'extension builds/chrome-1.4.3/build' : 'extension builds/extension-unpacked');
+  : path.resolve('extension builds/chrome-1.4.3/build');
 
 // _launchedContext is worker-scoped: one browser session per project run.
 // context (test-scoped) returns the same BrowserContext each time so state
@@ -95,7 +95,19 @@ export { expect } from '@playwright/test';
  * We call chrome.action.openPopup() from ZTB's own service worker, which creates a
  * popup CDP target. We then navigate a new page to the popup URL.
  */
-export async function openExtensionPopup(context: BrowserContext, ztbExtensionId: string): Promise<Page> {
+/**
+ * Open the extension popup and return its body text, read directly from the real popup
+ * window via CDP Target.attachToTarget + Runtime.evaluate.
+ * The popup cannot be loaded in a regular tab (renders empty without extension runtime),
+ * so we attach a flattened CDP session to the popup target and evaluate body text there.
+ */
+export async function openExtensionPopupBodyText(
+  context: BrowserContext,
+  ztbExtensionId: string,
+  existingPage?: import('@playwright/test').Page,
+): Promise<string> {
+  const popupUrl = `chrome-extension://${ztbExtensionId}/popup.html`;
+
   let sw = context.serviceWorkers().find(w => w.url().includes(ztbExtensionId));
   if (!sw) {
     sw = await context.waitForEvent('serviceworker', {
@@ -104,15 +116,18 @@ export async function openExtensionPopup(context: BrowserContext, ztbExtensionId
     });
   }
 
-  const popupUrl = `chrome-extension://${ztbExtensionId}/popup.html`;
-
-  // Check if there's already an open popup page before doing anything
-  const already = context.pages().find(p => p.url().startsWith(popupUrl) && !p.isClosed());
-  if (already) return already;
-
-  // Use a fresh page as the anchor for focus + CDP discovery
-  const anchorPage = await context.newPage();
-  await anchorPage.goto('about:blank');
+  // Prefer an existing page (e.g. navPage on the dashboard) so Chrome's lastFocusedWindow
+  // is already set correctly. Only open a new page if none is available.
+  let anchorPage: import('@playwright/test').Page;
+  let anchorIsOwned = false;
+  if (existingPage && !existingPage.isClosed()) {
+    anchorPage = existingPage;
+  } else {
+    anchorPage = await context.newPage();
+    anchorIsOwned = true;
+    const baseUrl = process.env.SQRX_BASE_URL ?? '';
+    await anchorPage.goto(baseUrl || 'about:blank').catch(() => {});
+  }
   await anchorPage.bringToFront();
 
   const cdp = await context.newCDPSession(anchorPage);
@@ -129,30 +144,79 @@ export async function openExtensionPopup(context: BrowserContext, ztbExtensionId
     });
   `);
 
-  // Poll CDP Target.getTargets until the popup target appears (it's a separate window target
-  // not surfaced as a Playwright page event when connecting via connectOverCDP)
-  let found = false;
+  await new Promise<void>(r => setTimeout(r, 2_000));
+
+  // Poll for popup target
+  let popupTargetId: string | null = null;
   for (let i = 0; i < 40; i++) {
     const { targetInfos } = await cdp.send('Target.getTargets');
-    if (targetInfos.find(t => t.url?.startsWith(popupUrl) && t.type === 'page')) {
-      found = true;
-      break;
-    }
+    const t = targetInfos.find(t => t.url?.startsWith(popupUrl) && t.type === 'page');
+    if (t) { popupTargetId = t.targetId; break; }
     await new Promise<void>(r => setTimeout(r, 250));
   }
 
-  await cdp.detach().catch(() => {});
-
-  if (!found) {
+  if (!popupTargetId) {
+    await cdp.detach().catch(() => {});
     await anchorPage.close().catch(() => {});
     throw new Error('Popup CDP target did not appear after openPopup()');
   }
 
-  // Navigate the anchor page to the popup URL — this is the reliable way to get a
-  // Playwright Page object for the popup when connectOverCDP doesn't surface new windows.
-  await anchorPage.goto(popupUrl);
-  await anchorPage.waitForLoadState('domcontentloaded').catch(() => {});
-  return anchorPage;
+  // Attach to the popup target with flatten:true — this gives us a CDP session
+  // routed directly into the popup window's JS context (not a new tab).
+  const { sessionId } = await cdp.send('Target.attachToTarget', {
+    targetId: popupTargetId,
+    flatten: true,
+  }) as { sessionId: string };
+
+  // Give the popup's React app time to mount and render
+  await new Promise<void>(r => setTimeout(r, 2_000));
+
+  // Evaluate body text inside the popup's real JS context via the flattened session
+  let body = '';
+  try {
+    const result = await cdp.send('Runtime.evaluate' as any, {
+      expression: `(document.body && (document.body.innerText || document.body.textContent)) || ''`,
+      returnByValue: true,
+      sessionId,
+    } as any) as any;
+    body = String(result?.result?.value ?? '');
+  } catch { /* ignore */ }
+
+  await cdp.send('Target.detachFromTarget', { sessionId }).catch(() => {});
+  await cdp.detach().catch(() => {});
+  if (anchorIsOwned) await anchorPage.close().catch(() => {});
+  return body;
+}
+
+export async function closeExtensionPopup(
+  context: BrowserContext,
+  ztbExtensionId: string,
+): Promise<void> {
+  const popupUrl = `chrome-extension://${ztbExtensionId}/popup.html`;
+  const existing = context.pages().find(p => p.url().startsWith(popupUrl) && !p.isClosed());
+  if (existing) await existing.close().catch(() => {});
+
+  // Close popup window via service worker
+  const sw = context.serviceWorkers().find(w => w.url().includes(ztbExtensionId));
+  if (sw) {
+    await sw.evaluate(`
+      chrome.windows.getAll({ populate: true }, wins => {
+        wins.forEach(w => {
+          if (w.type === 'popup') chrome.windows.remove(w.id);
+        });
+      });
+    `).catch(() => {});
+  }
+}
+
+export async function openExtensionPopup(context: BrowserContext, ztbExtensionId: string): Promise<Page> {
+  const popupUrl = `chrome-extension://${ztbExtensionId}/popup.html`;
+  const already = context.pages().find(p => p.url().startsWith(popupUrl) && !p.isClosed());
+  if (already) return already;
+  const page = await context.newPage();
+  await page.goto(popupUrl);
+  await page.waitForLoadState('networkidle').catch(() => {});
+  return page;
 }
 
 /** Clear all cookies, localStorage, and extension chrome.storage so a test starts unauthenticated. */

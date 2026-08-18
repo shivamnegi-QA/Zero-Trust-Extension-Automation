@@ -23,11 +23,24 @@ export async function webdriverLogin(
   await session.navigate(baseUrl);
   await sleep(5_000);
 
+  // If already logged in (email input not visible), log out first so the login form appears.
+  const alreadyLoggedIn = await session.findElement('css selector', '[data-testid="input-email"]')
+    .then(el => el === null)
+    .catch(() => false);
+  if (alreadyLoggedIn) {
+    console.log('  [webdriverLogin] Already logged in — logging out first');
+    const logoutUrl = baseUrl.replace(/\/?$/, '/api/logout?ext=t');
+    await session.navigate(logoutUrl);
+    await sleep(5_000);
+    await session.navigate(baseUrl);
+    await sleep(8_000);
+  }
+
   // Step 1: email
   const emailInput = await session.poll(
     () => session.findElement('css selector', '[data-testid="input-email"]'),
     el => el !== null,
-    { timeout: 15_000, interval: 1_000, message: 'Email input not found on dashboard' },
+    { timeout: 30_000, interval: 1_500, message: 'Email input not found on dashboard' },
   );
   if (!emailInput) throw new Error('Email input not found');
   await session.sendKeys(emailInput, email);
@@ -73,7 +86,9 @@ export function isConnectedState(body: string): boolean {
   const trimmed = body.trim();
   if (!trimmed || trimmed === '__popup_no_webarea__') return false;
   if (/^loading\.{0,3}$/i.test(trimmed) || /initializ/i.test(trimmed)) return false;
-  return !/authenticate/i.test(body);
+  if (/authenticate/i.test(body)) return false;
+  if (/login to the management console/i.test(body) || /welcome back to zero trust/i.test(body)) return false;
+  return true;
 }
 
 export interface SessionWithBodyText extends WebDriverSession {

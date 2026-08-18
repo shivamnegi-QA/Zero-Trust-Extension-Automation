@@ -250,6 +250,7 @@ export async function launchSystemChromeWithExtension(opts: {
           '--remote-debugging-port=0',
           '--no-first-run',
           '--no-default-browser-check',
+          '--start-maximized',
         ],
       },
     });

@@ -11,6 +11,9 @@ export const CHROME_BINARY = IS_WINDOWS
   ? (process.env.CHROME_BINARY ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
   : (process.env.CHROME_BINARY ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
 
+// Default Chrome extension path — same layout on both macOS and Windows.
+export const DEFAULT_CHROME_EXT_PATH = 'extension builds/chrome-1.4.3/build';
+
 // Resolve chromedriver: env var → local npm package → system PATH
 function resolveChromedriverWin(): string {
   if (process.env.CHROMEDRIVER) return process.env.CHROMEDRIVER;
