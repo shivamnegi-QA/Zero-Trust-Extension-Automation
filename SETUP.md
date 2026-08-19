@@ -5,6 +5,11 @@ Runs on **macOS** (Chrome, Firefox) and **Windows** (Chrome, Edge, Firefox).
 
 `playwright.config.ts` automatically includes only the projects for the current OS — no manual changes needed when switching between machines.
 
+> **Running on Windows?** Read [WINDOWS-CHANGES.md](WINDOWS-CHANGES.md) after this file. The
+> fixture and teardown code was refactored on macOS, where the `windows-*` projects cannot
+> execute, so that document records what changed, the before/after code, and how to
+> diagnose a Windows-only failure.
+
 ---
 
 ## Repository layout
@@ -12,7 +17,7 @@ Runs on **macOS** (Chrome, Firefox) and **Windows** (Chrome, Edge, Firefox).
 ```
 fixtures/
   base.ts             # Worker-scoped CDP fixture for 02-dashboard-login.spec.ts
-  extension.ts        # Unified worker-scoped fixture (PopupSession) for all browser projects
+  extension.ts        # PROJECTS descriptor table + PopupSession fixture for all browser projects
   firefox.ts          # Firefox popup helper used by extension.ts
 
 tests/
@@ -21,15 +26,26 @@ tests/
   helpers/
     webdriver-login.ts               # Shared login helper (webdriverLogin, isConnectedState)
 
+pages/
+  LoginPage.ts              # Page objects used by 02-dashboard-login.spec.ts
+  DashboardPage.ts
+
 utils/
   system-chrome.ts          # macOS only: ChromeDriver + Swift AX + AppleScript NSOpenPanel
   system-firefox.ts         # Cross-platform: geckodriver + GdSession (handles both macOS and Windows)
   system-windows-chrome.ts  # Windows only: ChromeDriver/MSEdgeDriver + PowerShell file-picker
   system-windows-edge.ts    # Windows only: MSEdgeDriver wrapper (delegates to windows-chrome)
   platform.ts               # OS-aware binary paths (auto-detects platform, reads .env overrides)
-  shared.ts                 # WdClient HTTP wrapper, sleep, getFreePort, extensionIdFromManifestKey
+  shared.ts                 # WdClient, sleep, getFreePort, extensionIdFromManifestKey, killProcessTree
+  chrome-profile.ts         # Chrome profile helpers used by the download script
+  env.ts                    # Zod schema that validates .env on startup
+
+ui/
+  server.ts                 # Test runner API, SSE log stream, run history
+  public/index.html         # Single-page runner UI
 
 playwright.config.ts  # Defines all projects; macOS projects excluded on Windows, vice versa
+run-history/          # Archived run results + failure screenshots (see "Run history" below)
 ```
 
 ### Projects per OS
@@ -58,13 +74,19 @@ tests/helpers/webdriver-login.ts         ← edit shared login logic
 ```
 
 ### Popup interaction changes (what the fixture exposes to tests)
-Edit `fixtures/extension.ts`. It has separate branches per project name. Changing the `PopupSession` interface or behavior means updating the relevant branch:
+Edit `fixtures/extension.ts`. It no longer branches per project — a `PROJECTS` descriptor table maps each Playwright project to its engine and launcher, and the launch/teardown flow lives once per engine:
 
-| If you're changing... | Update this branch in extension.ts |
+| If you're changing... | Edit this |
 |---|---|
-| Chrome popup (macOS) | `system-chrome` branch |
-| Chrome popup (Windows) | `windows-chrome` and `windows-edge` branches |
-| Firefox popup | `system-firefox` / `windows-firefox` branches (shared helper in `fixtures/firefox.ts`) |
+| Values for one project (extension path, temp-dir prefix, log tag, launcher) | That project's entry in the `PROJECTS` table |
+| Chrome/Edge popup behaviour on any OS | The `spec.engine === 'chromium'` flow, plus `makeChromeSession()` |
+| Firefox popup behaviour on any OS | The `else` (firefox) flow, plus `makeFirefoxPopupMethods()` in `fixtures/firefox.ts` |
+| Adding a new browser project | Add a `PROJECTS` entry and a project in `playwright.config.ts` — no new branch needed |
+
+Two constraints when editing the table:
+
+- **Keep `launch` a lazy `async` import.** It stops Windows-only launcher modules from loading on macOS, and vice versa.
+- **`windows-firefox` intentionally uses a different default extension path** (`extension builds/firefox-1.4.3`, no `/build`), because Windows Firefox builds ship unpacked at the bundle root.
 
 ### Chrome extension loading (macOS)
 Edit `utils/system-chrome.ts`.
@@ -90,8 +112,15 @@ Edit `utils/system-windows-chrome.ts`.
 Edit `utils/system-firefox.ts`. It handles both macOS and Windows via `IS_WINDOWS`.
 
 - Extension loading: `POST /session/{id}/moz/addon/install` — no file picker needed on either platform
-- Kill on macOS: `process.kill(pid, 'SIGTERM')`
-- Kill on Windows: `taskkill /F /T`
+- Kill: `killProcessTree()` (see below)
+
+### Killing browsers and drivers
+All three launchers call `killProcessTree(pid)` from `utils/shared.ts`, which issues
+`taskkill /F /T` on Windows and `SIGTERM` on POSIX.
+
+**The per-OS kill *order* is deliberate and opposite — preserve it.** The helper only picks
+the mechanism; each launcher's teardown decides the order, for the reasons documented in the
+two sections above. Getting it backwards leaves orphaned browsers behind.
 
 ### Dashboard test fixture (Chrome-only base fixture)
 Edit `fixtures/base.ts`.
@@ -288,6 +317,56 @@ npx playwright test tests/02-dashboard-login.spec.ts --project=windows-chrome
 npx playwright show-report reports/html
 ```
 
+> Running Windows after the recent fixture refactor? See [WINDOWS-CHANGES.md](WINDOWS-CHANGES.md)
+> for what changed and how to diagnose Windows-only failures.
+
+---
+
+## Test runner UI
+
+A browser front-end for the suite, served by `ui/server.ts` (Express + SSE, no build step).
+
+```bash
+npm run ui              # http://localhost:4321
+PORT=5000 npm run ui    # override the port
+```
+
+Behaviour worth knowing:
+
+- **Browser selection is OS-aware.** The UI reads `/api/platform` and shows the matching
+  pills — Chrome/Firefox on macOS, Chrome/Edge/Firefox on Windows. If the selected OS does
+  not match the host, **Run is disabled** (the projects cannot execute there anyway) and the
+  server independently rejects the request with HTTP 400.
+- **Sidebar badges** show which browsers each suite will actually run on, narrowed by the
+  `testMatch` rules in `playwright.config.ts` — so the dashboard spec shows Chrome only.
+- **Stop kills the whole process tree.** On POSIX the run is spawned `detached` and the
+  process group is signalled (escalating to `SIGKILL`); on Windows `taskkill /F /T` is used.
+  Ctrl-C on the server does the same for any in-flight run.
+- Playwright runs with `--reporter=list,json`: `list` drives the live stream, `json` feeds
+  run history.
+
+### Run history
+
+Completed runs are archived to `run-history/<ISO-timestamp>/`:
+
+```
+run-history/
+  2026-08-19T08-44-13-911Z/
+    run.json            # status, counts, per-test results, errors, log tail
+    artifacts/          # failure screenshots (and videos when captured)
+```
+
+Playwright **wipes `test-results/` at the start of every run**, so failure artifacts are
+copied into the run's own folder — otherwise older screenshots would break as soon as the
+next run started. Retention is capped at 50 runs (oldest pruned first).
+
+The History tab lists runs newest-first; expanding one shows per-test status, the failing
+spec line, the error, and the archived screenshot. Endpoints: `GET /api/history` (summaries)
+and `GET /api/history/:id` (full detail).
+
+`run-history/` is **tracked in git**, so `.gitignore` carries a `!run-history/**/*.png`
+exception to override the blanket `*.png` rule.
+
 ---
 
 ## Test architecture
@@ -355,15 +434,22 @@ On both platforms, GeckoDriver is the parent of Firefox. The kill order mirrors 
 
 ## Gitignore
 
+Key entries (see `.gitignore` for the full list, including per-build `extension builds/*` paths):
+
 ```
-.env
-extension builds/
+.env*                     # all env files — never commit credentials
 node_modules/
 dist/
-reports/
-test-results/
+reports/                  # Playwright HTML report + last-run.json
+test-results/             # wiped by Playwright at the start of every run
 *.png
+!run-history/**/*.png     # exception: archived failure screenshots are tracked
+.claude/
+.mcp.json
 ```
+
+Note `run-history/` itself is **not** ignored — run history is committed. The `!` exception
+above is required so the blanket `*.png` rule doesn't strip its screenshots.
 
 ---
 
@@ -376,8 +462,9 @@ test-results/
 - [ ] Accessibility permission granted to Terminal / VS Code / iTerm
 - [ ] `npm install` run in project root
 - [ ] `.env` created from `.env.example` with credentials and paths
-- [ ] Extension builds placed under `extension builds/`
-- [ ] `npx playwright test` — should run `system-chrome`, `system-firefox`
+- [ ] Extension builds placed under `extension builds/` (ZIPs there are auto-extracted by `global-setup.ts`)
+- [ ] `npx playwright test` — should run `system-chrome`, `system-firefox` (12 tests)
+- [ ] `npm run ui` — runner UI reachable at http://localhost:4321
 
 ### Windows
 - [ ] Node.js 20+ installed
@@ -386,5 +473,6 @@ test-results/
 - [ ] `geckodriver.exe` on PATH (or let global-setup auto-download)
 - [ ] `npm install` run in project root
 - [ ] `.env` created from `.env.example` with credentials and paths
-- [ ] Extension ZIPs in `builds/` (or pre-extracted under `extension builds/`)
+- [ ] Extension ZIPs or unpacked builds under `extension builds/` (`global-setup.ts` extracts ZIPs found there)
 - [ ] `npx playwright test` — should run `windows-chrome`, `windows-edge`, `windows-firefox`
+- [ ] Read [WINDOWS-CHANGES.md](WINDOWS-CHANGES.md) — the fixture refactor was never executed on Windows
