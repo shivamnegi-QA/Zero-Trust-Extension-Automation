@@ -11,18 +11,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
 import { FIREFOX_BINARY, GECKODRIVER, IS_WINDOWS } from './platform';
-import { sleep, getFreePort } from './shared';
+import { sleep, getFreePort, killProcessTree } from './shared';
 
 export { FIREFOX_BINARY, GECKODRIVER };
-
-function killProcess(pid: number): void {
-  if (IS_WINDOWS) {
-    try { cp.spawnSync('taskkill', ['/PID', String(pid), '/F', '/T'], { stdio: 'ignore', timeout: 5_000 }); }
-    catch { /* already gone */ }
-  } else {
-    try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
-  }
-}
 
 // ── WebDriver client ──────────────────────────────────────────────────────────
 
@@ -258,10 +249,10 @@ export async function launchFirefoxWithExtension(opts: {
     // Kill GeckoDriver with /T FIRST — this terminates GeckoDriver, Firefox, and
     // all Firefox sub-processes while the tree is intact.
     // Killing Firefox by PID first would orphan its content/GPU processes.
-    if (driver.pid != null) killProcess(driver.pid);
+    if (driver.pid != null) killProcessTree(driver.pid);
     else driver.kill('SIGTERM');
     // Belt-and-suspenders: also kill Firefox by its own PID.
-    if (ffPid) killProcess(ffPid);
+    killProcessTree(ffPid ?? undefined);
     await sleep(800);
   };
 

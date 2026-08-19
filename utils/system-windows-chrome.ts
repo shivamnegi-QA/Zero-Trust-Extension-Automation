@@ -18,8 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
 import { CHROME_BINARY, CHROMEDRIVER } from './platform';
-import { sleep, getFreePort, extensionIdFromManifestKey, WdClient } from './shared';
-export { extensionIdFromManifestKey } from './shared';
+import { sleep, getFreePort, extensionIdFromManifestKey, WdClient, killProcessTree } from './shared';
 
 // ── Windows file-picker automation ────────────────────────────────────────────
 
@@ -162,16 +161,6 @@ Write-Output 'result=done'
   await sleep(2500);
 }
 
-// ── Kill helper (Windows uses taskkill for reliable tree kill) ────────────────
-
-function killWin(pid: number): void {
-  try {
-    cp.spawnSync('taskkill', ['/PID', String(pid), '/F', '/T'], {
-      stdio: 'ignore', timeout: 5_000,
-    });
-  } catch { /* already gone */ }
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export interface WinLaunchOptions {
@@ -221,11 +210,11 @@ export async function launchWindowsBrowserWithExtension(opts: WinLaunchOptions):
     // browser process, and all Chrome sub-processes (renderers, GPU, crashpad) in
     // one shot while the process tree is still intact.
     // Killing Chrome by PID first would orphan its children before the tree-kill runs.
-    if (driver.pid != null) killWin(driver.pid);
+    if (driver.pid != null) killProcessTree(driver.pid);
     else driver.kill();
     // Belt-and-suspenders: also kill Chrome by its own PID in case it was not in
     // ChromeDriver's process tree at teardown time.
-    if (browserPid) killWin(browserPid);
+    killProcessTree(browserPid ?? undefined);
     await sleep(400);
   };
 

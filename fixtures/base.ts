@@ -79,9 +79,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   extensionId: async ({}, use) => {
-    const { extensionIdFromManifestKey } = IS_WINDOWS
-      ? await import('../utils/system-windows-chrome')
-      : await import('../utils/system-chrome');
+    // Manifest-key hashing is platform-independent, so read it from shared directly
+    // rather than pulling in an OS-specific launcher module for one pure function.
+    const { extensionIdFromManifestKey } = await import('../utils/shared');
     await use(extensionIdFromManifestKey(EXTENSION_PATH));
   },
 });

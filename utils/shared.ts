@@ -2,9 +2,29 @@ import * as net from 'net';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as cp from 'child_process';
+import { IS_WINDOWS } from './platform';
 
 export function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Terminate a browser or driver process.
+ *
+ * On Windows the driver parents the browser, so taskkill /T tears the tree down
+ * atomically. On POSIX the two are unrelated for signal purposes, so callers must kill
+ * the browser PID before the driver's or the browser is left running.
+ */
+export function killProcessTree(pid: number | undefined): void {
+  if (!pid) return;
+  try {
+    if (IS_WINDOWS) {
+      cp.spawnSync('taskkill', ['/PID', String(pid), '/F', '/T'], { stdio: 'ignore', timeout: 5_000 });
+    } else {
+      process.kill(pid, 'SIGTERM');
+    }
+  } catch { /* already gone */ }
 }
 
 export function getFreePort(): Promise<number> {

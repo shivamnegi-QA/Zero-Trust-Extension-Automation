@@ -11,6 +11,9 @@
 import { test as base, expect, BrowserContext, Page } from '@playwright/test';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import type { GdSession } from '../utils/system-firefox';
 
 dotenv.config();
 
@@ -214,76 +217,127 @@ type ExtensionFixtures = {
   extId: string;
 };
 
+// ── Per-project browser descriptors ───────────────────────────────────────────
+//
+// Every project differs only in which launcher to call and which paths to use, so the
+// launch/teardown flow lives once per engine and the per-project values live here.
+// Windows entries stay in the table on macOS (and vice versa) so the same fixture keeps
+// working when the suite runs on a real Windows machine — playwright.config.ts decides
+// which projects are active for the current OS, not this table.
+
+type LaunchOptions = { extensionPath: string; profilePath: string; tag: string };
+
+interface ProjectSpecBase {
+  /** Env var that overrides the extension path, with the fallback used when unset. */
+  extPathEnv: 'EXTENSION_PATH' | 'FIREFOX_EXTENSION_PATH';
+  defaultExtPath: string;
+  tmpPrefix: string;
+  tag: string;
+}
+
+// Lazy launcher imports keep Windows-only modules from loading on macOS, and vice versa.
+interface ChromiumProjectSpec extends ProjectSpecBase {
+  engine: 'chromium';
+  launch: (opts: LaunchOptions) => Promise<{ cdpEndpoint: string; teardown: () => Promise<void> }>;
+}
+
+interface FirefoxProjectSpec extends ProjectSpecBase {
+  engine: 'firefox';
+  launch: (opts: LaunchOptions) => Promise<{ session: GdSession; teardown: () => Promise<void> }>;
+}
+
+type ProjectSpec = ChromiumProjectSpec | FirefoxProjectSpec;
+
+const CHROME_EXT_DEFAULT = 'extension builds/chrome-1.4.3/build';
+
+const PROJECTS: Record<string, ProjectSpec> = {
+  'system-chrome': {
+    engine: 'chromium',
+    extPathEnv: 'EXTENSION_PATH',
+    defaultExtPath: CHROME_EXT_DEFAULT,
+    tmpPrefix: 'ztb-test-',
+    tag: '[fixture]',
+    launch: async (o) => (await import('../utils/system-chrome')).launchSystemChromeWithExtension(o),
+  },
+  'system-firefox': {
+    engine: 'firefox',
+    extPathEnv: 'FIREFOX_EXTENSION_PATH',
+    defaultExtPath: 'extension builds/firefox-1.4.3/build',
+    tmpPrefix: 'ztb-ff-test-',
+    tag: '[fixture:firefox]',
+    launch: async (o) => (await import('../utils/system-firefox')).launchFirefoxWithExtension(o),
+  },
+  'windows-chrome': {
+    engine: 'chromium',
+    extPathEnv: 'EXTENSION_PATH',
+    defaultExtPath: CHROME_EXT_DEFAULT,
+    tmpPrefix: 'ztb-winchrome-',
+    tag: '[fixture:windows-chrome]',
+    launch: async (o) => (await import('../utils/system-windows-chrome')).launchWindowsBrowserWithExtension(o),
+  },
+  'windows-edge': {
+    engine: 'chromium',
+    extPathEnv: 'EXTENSION_PATH',
+    defaultExtPath: CHROME_EXT_DEFAULT,
+    tmpPrefix: 'ztb-winedge-',
+    tag: '[fixture:windows-edge]',
+    launch: async (o) => (await import('../utils/system-windows-edge')).launchWindowsEdgeWithExtension(o),
+  },
+  'windows-firefox': {
+    engine: 'firefox',
+    extPathEnv: 'FIREFOX_EXTENSION_PATH',
+    // Windows builds ship unpacked at the bundle root, not under build/.
+    defaultExtPath: 'extension builds/firefox-1.4.3',
+    tmpPrefix: 'ztb-winff-',
+    tag: '[fixture:windows-firefox]',
+    launch: async (o) => (await import('../utils/system-firefox')).launchFirefoxWithExtension(o),
+  },
+};
+
+function resolveExtPath(spec: ProjectSpec): string {
+  const override = process.env[spec.extPathEnv];
+  return path.resolve(override ? override : spec.defaultExtPath);
+}
+
+/** Firefox reports its extension id from the manifest rather than a hashed key. */
+function firefoxExtensionId(extPath: string): string {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(extPath, 'manifest.json'), 'utf8'));
+    return manifest?.browser_specific_settings?.gecko?.id ?? manifest?.applications?.gecko?.id ?? '';
+  } catch { return ''; }
+}
+
 // ── Unified test fixture ──────────────────────────────────────────────────────
 
 export const test = base.extend<{}, ExtensionFixtures>({
   // extId: the extension identifier (extensionId for Chrome/FF)
   extId: [async ({}, use, workerInfo) => {
-    const project = workerInfo.project.name;
+    const spec = PROJECTS[workerInfo.project.name];
+    if (!spec) { await use(''); return; }
 
-    if (project === 'system-chrome') {
-      const { extensionIdFromManifestKey } = await import('../utils/system-chrome');
-      const extPath = process.env.EXTENSION_PATH
-        ? path.resolve(process.env.EXTENSION_PATH)
-        : path.resolve('extension builds/chrome-1.4.3/build');
-      await use(extensionIdFromManifestKey(extPath));
-
-    } else if (project === 'system-firefox') {
-      const ffExtPath = process.env.FIREFOX_EXTENSION_PATH
-        ? path.resolve(process.env.FIREFOX_EXTENSION_PATH)
-        : path.resolve('extension builds/firefox-1.4.3/build');
-      try {
-        const { readFileSync } = await import('fs');
-        const manifest = JSON.parse(readFileSync(path.join(ffExtPath, 'manifest.json'), 'utf8'));
-        const id = manifest?.browser_specific_settings?.gecko?.id ?? manifest?.applications?.gecko?.id ?? '';
-        await use(id);
-      } catch { await use(''); }
-
-    } else if (project === 'windows-chrome' || project === 'windows-edge') {
-      const { extensionIdFromManifestKey } = await import('../utils/system-windows-chrome');
-      const extPath = process.env.EXTENSION_PATH
-        ? path.resolve(process.env.EXTENSION_PATH)
-        : path.resolve('extension builds/chrome-1.4.3/build');
-      await use(extensionIdFromManifestKey(extPath));
-
-    } else if (project === 'windows-firefox') {
-      const ffExtPath = process.env.FIREFOX_EXTENSION_PATH
-        ? path.resolve(process.env.FIREFOX_EXTENSION_PATH)
-        : path.resolve('extension builds/firefox-1.4.3');
-      try {
-        const { readFileSync } = await import('fs');
-        const manifest = JSON.parse(readFileSync(path.join(ffExtPath, 'manifest.json'), 'utf8'));
-        const id = manifest?.browser_specific_settings?.gecko?.id ?? manifest?.applications?.gecko?.id ?? '';
-        await use(id);
-      } catch { await use(''); }
-
+    const extPath = resolveExtPath(spec);
+    if (spec.engine === 'firefox') {
+      await use(firefoxExtensionId(extPath));
     } else {
-      await use('');
+      const { extensionIdFromManifestKey } = await import('../utils/shared');
+      await use(extensionIdFromManifestKey(extPath));
     }
   }, { scope: 'worker' }],
 
   extSession: [async ({ extId }, use, workerInfo) => {
-    const project = workerInfo.project.name;
+    const spec = PROJECTS[workerInfo.project.name];
+    if (!spec) throw new Error(`Unknown project: ${workerInfo.project.name}`);
 
-    if (project === 'system-chrome') {
-      const { launchSystemChromeWithExtension } = await import('../utils/system-chrome');
+    const extensionPath = resolveExtPath(spec);
+    const profilePath = fs.mkdtempSync(path.join(os.tmpdir(), spec.tmpPrefix));
+
+    if (spec.engine === 'chromium') {
+      // Chromium engines (Chrome on either OS, Edge on Windows) all expose CDP, so the
+      // popup is driven through a Playwright context regardless of which driver launched it.
       const { chromium } = await import('@playwright/test');
-      const { mkdtempSync } = await import('fs');
-      const { tmpdir } = await import('os');
-      const { rmSync } = await import('fs');
+      const { cdpEndpoint, teardown } = await spec.launch({ extensionPath, profilePath, tag: spec.tag });
 
-      const extPath = process.env.EXTENSION_PATH
-        ? path.resolve(process.env.EXTENSION_PATH)
-        : path.resolve('extension builds/chrome-1.4.3/build');
-      const tmpProfile = mkdtempSync(path.join(tmpdir(), 'ztb-test-'));
-
-      const { cdpEndpoint, teardown } = await launchSystemChromeWithExtension({
-        extensionPath: extPath,
-        profilePath: tmpProfile,
-        tag: '[fixture]',
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let browser: any = null;
+      let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | null = null;
       try {
         browser = await chromium.connectOverCDP(cdpEndpoint);
         const context = browser.contexts()[0] ?? await browser.newContext();
@@ -291,53 +345,37 @@ export const test = base.extend<{}, ExtensionFixtures>({
       } finally {
         await teardown();
         await browser?.close().catch(() => {});
+        // Give the browser time to release profile locks before removing the dir.
         await new Promise(r => setTimeout(r, 1500));
-        try { rmSync(tmpProfile, { recursive: true, force: true }); } catch { /* Chrome may still hold locks; OS will clean up */ }
+        try { fs.rmSync(profilePath, { recursive: true, force: true }); } catch { /* OS will clean up */ }
       }
 
-    } else if (project === 'system-firefox') {
-      const { launchFirefoxWithExtension } = await import('../utils/system-firefox');
-      const { mkdtempSync, rmSync } = await import('fs');
-      const { tmpdir } = await import('os');
-
-      const ffExtPath = process.env.FIREFOX_EXTENSION_PATH
-        ? path.resolve(process.env.FIREFOX_EXTENSION_PATH)
-        : path.resolve('extension builds/firefox-1.4.3/build');
-      const tmpProfile = mkdtempSync(path.join(tmpdir(), 'ztb-ff-test-'));
-
-      const { session, teardown } = await launchFirefoxWithExtension({
-        extensionPath: ffExtPath,
-        profilePath: tmpProfile,
-        tag: '[fixture:firefox]',
-      });
+    } else {
+      // Firefox has no CDP, so the popup is driven over geckodriver's WebDriver session.
+      const { session, teardown } = await spec.launch({ extensionPath, profilePath, tag: spec.tag });
 
       let lastHandle: string | null = null;
-
       const ffSession: PopupSession = {
         browser: 'firefox',
         extensionKey: extId,
-        ...makeFirefoxPopupMethods(
-          session,
-          () => lastHandle,
-          (h) => { lastHandle = h; }
-        ),
+        ...makeFirefoxPopupMethods(session, () => lastHandle, (h) => { lastHandle = h; }),
         findElement: (s, sel) => session.findElement(s, sel),
         clickElement: (id) => session.clickElement(id),
         execute: <T>(script: string, args: unknown[] = []) => session.execute<T>(script, args),
-        sendKeys: (id, text) => session.json('POST', `/session/${session.sessionId}/element/${id}/value`, { value: text.split(''), text }).then(() => {}),
+        sendKeys: (id, text) => session
+          .json('POST', `/session/${session.sessionId}/element/${id}/value`, { value: text.split(''), text })
+          .then(() => {}),
         currentUrl: () => session.currentUrl(),
         screenshot: (p) => session.screenshot(p),
         poll: (fn, cond, opts) => session.poll(fn, cond, opts),
         async clearAuth() {
           await session.deleteAllCookies();
-          // Navigate to origin to clear localStorage
+          // localStorage is origin-scoped, so switch off the popup window before clearing.
           const handles = await session.getWindowHandles().catch(() => [] as string[]);
           const mainHandle = handles.find(h => h !== lastHandle) ?? handles[0];
           if (mainHandle) await session.switchToWindow(mainHandle).catch(() => {});
           await session.navigate(BASE_URL).catch(() => {});
-          await session.execute<void>(
-            'try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}'
-          ).catch(() => {});
+          await session.execute<void>('try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}').catch(() => {});
         },
       };
 
@@ -346,125 +384,9 @@ export const test = base.extend<{}, ExtensionFixtures>({
       } finally {
         await teardown();
         await session.deleteSession().catch(() => {});
-        const { rmSync: rm2 } = await import('fs');
-        rm2(tmpProfile, { recursive: true, force: true });
-      }
-
-    } else if (project === 'windows-chrome') {
-      const { launchWindowsBrowserWithExtension } = await import('../utils/system-windows-chrome');
-      const { chromium } = await import('@playwright/test');
-      const { mkdtempSync, rmSync } = await import('fs');
-      const { tmpdir } = await import('os');
-
-      const extPath = process.env.EXTENSION_PATH
-        ? path.resolve(process.env.EXTENSION_PATH)
-        : path.resolve('extension builds/chrome-1.4.3/build');
-      const tmpProfile = mkdtempSync(path.join(tmpdir(), 'ztb-winchrome-'));
-
-      const { cdpEndpoint, teardown } = await launchWindowsBrowserWithExtension({
-        extensionPath: extPath,
-        profilePath: tmpProfile,
-        tag: '[fixture:windows-chrome]',
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let browser: any = null;
-      try {
-        browser = await chromium.connectOverCDP(cdpEndpoint);
-        const context = browser.contexts()[0] ?? await browser.newContext();
-        await use(makeChromeSession(context, extId, cdpEndpoint));
-      } finally {
-        await teardown();
-        await browser?.close().catch(() => {});
         await new Promise(r => setTimeout(r, 1500));
-        try { rmSync(tmpProfile, { recursive: true, force: true }); } catch { /* Chrome may still hold locks; OS will clean up */ }
+        try { fs.rmSync(profilePath, { recursive: true, force: true }); } catch { /* OS will clean up */ }
       }
-
-    } else if (project === 'windows-edge') {
-      const { launchWindowsEdgeWithExtension } = await import('../utils/system-windows-edge');
-      const { chromium } = await import('@playwright/test');
-      const { mkdtempSync, rmSync } = await import('fs');
-      const { tmpdir } = await import('os');
-
-      const extPath = process.env.EXTENSION_PATH
-        ? path.resolve(process.env.EXTENSION_PATH)
-        : path.resolve('extension builds/chrome-1.4.3/build');
-      const tmpProfile = mkdtempSync(path.join(tmpdir(), 'ztb-winedge-'));
-
-      const { cdpEndpoint, teardown } = await launchWindowsEdgeWithExtension({
-        extensionPath: extPath,
-        profilePath: tmpProfile,
-        tag: '[fixture:windows-edge]',
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let browser: any = null;
-      try {
-        browser = await chromium.connectOverCDP(cdpEndpoint);
-        const context = browser.contexts()[0] ?? await browser.newContext();
-        await use(makeChromeSession(context, extId, cdpEndpoint));
-      } finally {
-        await teardown();
-        await browser?.close().catch(() => {});
-        await new Promise(r => setTimeout(r, 1500));
-        try { rmSync(tmpProfile, { recursive: true, force: true }); } catch { /* Chrome may still hold locks; OS will clean up */ }
-      }
-
-    } else if (project === 'windows-firefox') {
-      const { launchFirefoxWithExtension } = await import('../utils/system-firefox');
-      const { mkdtempSync, rmSync } = await import('fs');
-      const { tmpdir } = await import('os');
-
-      const ffExtPath = process.env.FIREFOX_EXTENSION_PATH
-        ? path.resolve(process.env.FIREFOX_EXTENSION_PATH)
-        : path.resolve('extension builds/firefox-1.4.3');
-      const tmpProfile = mkdtempSync(path.join(tmpdir(), 'ztb-winff-'));
-
-      const { session, teardown } = await launchFirefoxWithExtension({
-        extensionPath: ffExtPath,
-        profilePath: tmpProfile,
-        tag: '[fixture:windows-firefox]',
-      });
-
-      let lastHandle: string | null = null;
-
-      const winFfSession: PopupSession = {
-        browser: 'firefox',
-        extensionKey: extId,
-        ...makeFirefoxPopupMethods(
-          session,
-          () => lastHandle,
-          (h) => { lastHandle = h; }
-        ),
-        findElement: (s, sel) => session.findElement(s, sel),
-        clickElement: (id) => session.clickElement(id),
-        execute: <T>(script: string, args: unknown[] = []) => session.execute<T>(script, args),
-        sendKeys: (id, text) => session.json('POST', `/session/${session.sessionId}/element/${id}/value`, { value: text.split(''), text }).then(() => {}),
-        currentUrl: () => session.currentUrl(),
-        screenshot: (p) => session.screenshot(p),
-        poll: (fn, cond, opts) => session.poll(fn, cond, opts),
-        async clearAuth() {
-          await session.deleteAllCookies();
-          // Navigate to origin to clear localStorage
-          const handles = await session.getWindowHandles().catch(() => [] as string[]);
-          const mainHandle = handles.find(h => h !== lastHandle) ?? handles[0];
-          if (mainHandle) await session.switchToWindow(mainHandle).catch(() => {});
-          await session.navigate(BASE_URL).catch(() => {});
-          await session.execute<void>(
-            'try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}'
-          ).catch(() => {});
-        },
-      };
-
-      try {
-        await use(winFfSession);
-      } finally {
-        await teardown();
-        await session.deleteSession().catch(() => {});
-        await new Promise(r => setTimeout(r, 1500));
-        try { rmSync(tmpProfile, { recursive: true, force: true }); } catch { /* may still hold locks; OS will clean up */ }
-      }
-
-    } else {
-      throw new Error(`Unknown project: ${workerInfo.project.name}`);
     }
   }, { scope: 'worker' }],
 });

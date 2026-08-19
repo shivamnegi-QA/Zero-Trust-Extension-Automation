@@ -23,10 +23,9 @@ import * as os from 'os';
 import * as path from 'path';
 import * as cp from 'child_process';
 import { CHROME_BINARY, CHROMEDRIVER } from './platform';
-import { sleep, getFreePort, extensionIdFromManifestKey, WdClient } from './shared';
+import { sleep, getFreePort, extensionIdFromManifestKey, WdClient, killProcessTree } from './shared';
 
 export { CHROME_BINARY, CHROMEDRIVER };
-export { extensionIdFromManifestKey } from './shared';
 
 const SWIFT_AX_HELPER = '/tmp/open-goto-folder';
 
@@ -227,7 +226,7 @@ export async function launchSystemChromeWithExtension(opts: {
     // Kill Chrome directly by PID first — on macOS ChromeDriver spawns Chrome as a
     // separate process, so SIGTERM to ChromeDriver alone does not reach Chrome.
     if (chromePidForTeardown) {
-      try { process.kill(chromePidForTeardown, 'SIGTERM'); } catch { /* already gone */ }
+      killProcessTree(chromePidForTeardown);
       await sleep(400);
     }
     driver.kill('SIGTERM');
