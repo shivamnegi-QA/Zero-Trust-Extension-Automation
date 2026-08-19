@@ -1507,6 +1507,7 @@ let runStart = null;
 let allFiles = [];
 let selectedFiles = new Set();
 let testMap = new Map();        // key → { suite, name, status, rowEl, groupEl, groupBodyEl, lineCount, logLines, screenshotUrl }
+let groupFiles = new Map();     // sidebar groupKey → spec files, for browser-badge scoping
 let suitesMap = new Map();      // suiteName → { blockEl, bodyEl, tests: Map<name, rowEl> }
 let currentTestKey = null;
 let metaGroupEl = null;
@@ -1523,6 +1524,7 @@ let TEST_CATALOGUE = [];
 // ─────────────────────────────────────────────────────────────────────────────
 let selectedOs = 'mac';    // 'mac' | 'windows'
 let actualOs   = 'mac';    // set from /api/platform on init
+let isRunning  = false;
 
 function onOsChange(os) {
   selectedOs = os;
@@ -1534,16 +1536,32 @@ function onOsChange(os) {
   updateGroupBadges();
 }
 
+const OS_NAMES = { mac: 'macOS', windows: 'Windows' };
+
+function osMismatch() { return selectedOs !== actualOs; }
+
+function osMismatchReason() {
+  return `Cannot run: tests target ${OS_NAMES[selectedOs]} but this machine is ${OS_NAMES[actualOs]}.`;
+}
+
+// Run is blocked while a run is active or while the selected OS can't work on this machine.
+function updateRunButton() {
+  const btn = document.getElementById('run-btn');
+  if (!btn) return;
+  btn.disabled = isRunning || osMismatch();
+  btn.title = osMismatch() ? osMismatchReason() : '';
+}
+
 function updateOsMismatchBanner() {
   const banner  = document.getElementById('os-mismatch-banner');
   const textEl  = document.getElementById('os-mismatch-text');
-  const names   = { mac: 'macOS', windows: 'Windows' };
-  if (selectedOs !== actualOs) {
-    textEl.textContent = `Warning: selected OS is ${names[selectedOs]} but this machine is ${names[actualOs]} — tests will fail on the wrong OS.`;
+  if (osMismatch()) {
+    textEl.textContent = `Cannot run: selected OS is ${OS_NAMES[selectedOs]} but this machine is ${OS_NAMES[actualOs]} — running is disabled.`;
     banner.classList.add('visible');
   } else {
     banner.classList.remove('visible');
   }
+  updateRunButton();
 }
 
 function onBrowserChange(cb, pillId) {
@@ -1881,24 +1899,36 @@ function fileToGroupKey(f) {
   return EXTENSION_SPEC_RE.test(f) ? '__extension__' : f;
 }
 
-function fileToBrowserTag(f) {
+// Which browsers a spec runs on, mirroring the testMatch rules in playwright.config.ts:
+// the extension spec is matched by every project, so it runs on whatever the user
+// selected; anything else is Chrome-only unless the filename names a browser.
+// Returns null to mean "every selected browser".
+function fileBrowserScope(f) {
   const lf = f.toLowerCase();
-  if (lf.includes('firefox'))  return 'firefox';
-  if (lf.includes('chrome') || EXTENSION_SPEC_RE.test(f)) return 'chrome';
-  return null;
+  if (lf.includes('firefox')) return ['firefox'];
+  if (lf.includes('edge'))    return ['edge'];
+  if (EXTENSION_SPEC_RE.test(f)) return null;
+  return ['chrome'];
 }
 
-// groups: Map<groupKey, { label, files: string[], browsers: Set<string> }>
+function groupBrowserScope(files) {
+  const set = new Set();
+  for (const f of files) {
+    const scope = fileBrowserScope(f);
+    if (scope === null) return null;
+    scope.forEach(b => set.add(b));
+  }
+  return [...set];
+}
+
+// groups: Map<groupKey, { label, files: string[] }>
 function buildGroups(files) {
   const map = new Map();
   files.forEach(f => {
     const key   = fileToGroupKey(f);
     const label = fileToGroupLabel(f);
-    if (!map.has(key)) map.set(key, { label, files: [], browsers: new Set() });
-    const g = map.get(key);
-    g.files.push(f);
-    const b = fileToBrowserTag(f);
-    if (b) g.browsers.add(b);
+    if (!map.has(key)) map.set(key, { label, files: [] });
+    map.get(key).files.push(f);
   });
   return map;
 }
@@ -1909,6 +1939,7 @@ function renderSidebar(files) {
   list.innerHTML = '';
 
   const groups = buildGroups(files);
+  groupFiles = new Map([...groups].map(([key, g]) => [key, g.files]));
   const FILE_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
   const GROUP_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
 
@@ -1942,19 +1973,9 @@ function renderSidebar(files) {
 
     header.append(cb, icon, labelEl);
 
-    if (g.browsers.size > 0) {
-      const badges = document.createElement('div');
-      badges.className = 'test-group-browsers';
-      ['chrome', 'firefox'].forEach(b => {
-        if (!g.browsers.has(b)) return;
-        const badge = document.createElement('span');
-        badge.className = 'test-group-browser-badge';
-        badge.dataset.browser = b;
-        badge.textContent = b === 'chrome' ? 'Chr' : 'Ff';
-        badges.appendChild(badge);
-      });
-      header.appendChild(badges);
-    }
+    const badges = document.createElement('div');
+    badges.className = 'test-group-browsers';
+    header.appendChild(badges);
 
     wrapper.appendChild(header);
     list.appendChild(wrapper);
@@ -1971,12 +1992,30 @@ function updateSelSummary() {
   if (badge) badge.textContent = selectedFiles.size;
 }
 
+const BROWSER_ABBR = { chrome: 'Chr', firefox: 'Ff', edge: 'Edg' };
+
+// Render one badge per browser the group will actually run on: the browsers the user
+// selected, narrowed to those the spec supports. Rebuilt on every selection change so
+// the sidebar always reflects the current Chrome/Firefox/Edge choice on either OS.
 function updateGroupBadges() {
-  const activeBrowsers = getSelectedBrowsers();
   // Normalise: windows-chrome → chrome, windows-edge → edge, windows-firefox → firefox
-  const normBrowsers = activeBrowsers.map(b => b.replace('windows-', ''));
-  document.querySelectorAll('.test-group-browser-badge').forEach(badge => {
-    badge.classList.toggle('active', normBrowsers.includes(badge.dataset.browser));
+  const selected = getSelectedBrowsers().map(b => b.replace('windows-', ''));
+
+  document.querySelectorAll('.test-group').forEach(wrapper => {
+    const container = wrapper.querySelector('.test-group-browsers');
+    if (!container) return;
+    const files = groupFiles.get(wrapper.dataset.groupKey) ?? [];
+    const scope = groupBrowserScope(files);
+    const shown = scope === null ? selected : selected.filter(b => scope.includes(b));
+
+    container.innerHTML = '';
+    shown.forEach(b => {
+      const badge = document.createElement('span');
+      badge.className = 'test-group-browser-badge active';
+      badge.dataset.browser = b;
+      badge.textContent = BROWSER_ABBR[b] ?? b;
+      container.appendChild(badge);
+    });
   });
 }
 
@@ -2002,8 +2041,9 @@ function setStatus(s) {
   dot.className  = 'status-dot '  + s;
   lbl.textContent = s.charAt(0).toUpperCase() + s.slice(1);
 
-  document.getElementById('run-btn').disabled  = s === 'running';
-  document.getElementById('stop-btn').disabled = s !== 'running';
+  isRunning = s === 'running';
+  updateRunButton();
+  document.getElementById('stop-btn').disabled = !isRunning;
 
   if (s === 'running') { runStart = Date.now(); setAutoScroll(true); }
   if (s === 'passed' || s === 'failed') {
@@ -2529,6 +2569,7 @@ function clearAll() {
 }
 
 async function startRun() {
+  if (osMismatch()) { showToast(osMismatchReason(), 'error'); return; }
   clearAll();
   const grep     = document.getElementById('grep-input').value.trim();
   const files    = allFiles.length ? [...selectedFiles] : [];
@@ -2566,6 +2607,7 @@ function exactGrepFor(suite, name) {
 }
 
 async function runSingleTest(file, suiteName, testName) {
+  if (osMismatch()) { showToast(osMismatchReason(), 'error'); return; }
   clearAll();
   const browsers = getSelectedBrowsers();
   await fetch('/api/run', {
@@ -2589,6 +2631,7 @@ function runOutputRow(btn) {
 // Re-run failed tests
 // ─────────────────────────────────────────────────────────────────────────────
 function rerunFailed() {
+  if (osMismatch()) { showToast(osMismatchReason(), 'error'); return; }
   const failed = [...testMap.values()].filter(e => e.status === 'fail');
   if (!failed.length) return;
   const grep = failed.map(e => exactGrepFor(e.suite, e.name)).join('|');
