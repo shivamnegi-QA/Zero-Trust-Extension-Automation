@@ -191,6 +191,7 @@ function validateTestFilePath(relPath: string): string | null {
 function fileToBrowser(relPath: string): string {
   const f = relPath.toLowerCase();
   if (f.includes('firefox')) return 'firefox';
+  if (f.includes('safari')) return 'safari';
   if (f.includes('chrome') || /\b0*1-extension/.test(f)) return 'chrome';
   return 'all';
 }
@@ -370,7 +371,7 @@ app.get('/api/catalogue', (_req, res) => {
         let src: string;
         try { src = fs.readFileSync(path.join(dir, entry.name), 'utf8'); } catch { continue; }
         const lines = src.split('\n');
-        const describeMatch = src.match(/test\.describe\s*\(\s*['"`]([^'"`]+)['"`]/);
+        const describeMatch = src.match(/test\.describe(?:\.serial|\.parallel)?\s*\(\s*['"`]([^'"`]+)['"`]/);
         const suite = describeMatch ? describeMatch[1] : relPath.replace(/\.(spec|test)\.ts$/, '');
         const testRe = /^\s*test\s*\(\s*['"`]([^'"`]+)['"`]/gm;
         let m: RegExpExecArray | null;
@@ -543,12 +544,13 @@ app.post('/api/run', (req, res) => {
 
   // Validate and sanitise browsers — only known values accepted
   const KNOWN_BROWSERS = [
-    'chrome', 'firefox',
+    'chrome', 'firefox', 'safari',
     'windows-chrome', 'windows-edge', 'windows-firefox',
   ];
   const BROWSER_TO_PROJECT: Record<string, string> = {
     chrome:            'system-chrome',
     firefox:           'system-firefox',
+    safari:            'system-safari',
     'windows-chrome':  'windows-chrome',
     'windows-edge':    'windows-edge',
     'windows-firefox': 'windows-firefox',

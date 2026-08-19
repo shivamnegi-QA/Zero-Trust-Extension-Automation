@@ -27,6 +27,16 @@ export function killProcessTree(pid: number | undefined): void {
   } catch { /* already gone */ }
 }
 
+/** True if this process has Accessibility permission (required for System Events GUI scripting). */
+export function checkAccessibility(): boolean {
+  const r = cp.spawnSync('osascript', ['-e', 'tell application "System Events" to keystroke ""'], {
+    stdio: ['ignore', 'ignore', 'pipe'],
+    timeout: 5000,
+  });
+  const stderr = r.stderr?.toString() ?? '';
+  return !stderr.includes('not allowed') && !stderr.includes('1002') && !stderr.includes('(-1743)');
+}
+
 export function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();

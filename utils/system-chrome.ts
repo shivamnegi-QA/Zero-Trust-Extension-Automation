@@ -23,7 +23,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as cp from 'child_process';
 import { CHROME_BINARY, CHROMEDRIVER } from './platform';
-import { sleep, getFreePort, extensionIdFromManifestKey, WdClient, killProcessTree } from './shared';
+import { sleep, getFreePort, extensionIdFromManifestKey, WdClient, killProcessTree, checkAccessibility } from './shared';
 
 export { CHROME_BINARY, CHROMEDRIVER };
 
@@ -112,15 +112,6 @@ print("focused: \\(fr.rawValue)")
     return false;
   }
   return true;
-}
-
-export function checkAccessibility(): boolean {
-  const r = cp.spawnSync('osascript', ['-e', 'tell application "System Events" to keystroke ""'], {
-    stdio: ['ignore', 'ignore', 'pipe'],
-    timeout: 5000,
-  });
-  const stderr = r.stderr?.toString() ?? '';
-  return !stderr.includes('not allowed') && !stderr.includes('1002') && !stderr.includes('(-1743)');
 }
 
 async function fillNativeFilePicker(chromePid: number, folderPath: string): Promise<void> {

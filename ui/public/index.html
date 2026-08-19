@@ -860,7 +860,6 @@
     .log-group-badge.fail    { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.25); }
     .log-group-badge.skip    { background: var(--wip-dim);    color: var(--wip);    border: 1px solid rgba(245,158,11,0.25); }
     .log-group-badge.running { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,212,255,0.25); }
-    .log-group-badge.meta    { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
     .log-group-badge.pending { background: rgba(255,255,255,0.03); color: var(--muted); border: 1px solid var(--border); }
 
     .log-group-name { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1365,6 +1364,13 @@
             </span>
             Firefox
           </label>
+          <label class="browser-pill checked" id="pill-safari">
+            <input type="checkbox" id="browser-safari" checked onchange="onBrowserChange(this,'pill-safari')" />
+            <span class="browser-pill-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12,5.5 14,12 12,18.5 10,12" fill="currentColor" stroke="none"/></svg>
+            </span>
+            Safari
+          </label>
         </div>
 
         <!-- Windows browsers (hidden by default) -->
@@ -1620,9 +1626,6 @@ let testMap = new Map();        // key → { suite, name, status, rowEl, groupEl
 let groupFiles = new Map();     // sidebar groupKey → spec files, for browser-badge scoping
 let suitesMap = new Map();      // suiteName → { blockEl, bodyEl, tests: Map<name, rowEl> }
 let currentTestKey = null;
-let metaGroupEl = null;
-let metaGroupBodyEl = null;
-let metaLineCount = 0;
 let rawLineCount = 0;
 // ─────────────────────────────────────────────────────────────────────────────
 // Test catalogue — loaded from /api/catalogue at startup (parsed from spec files)
@@ -1690,6 +1693,7 @@ function getSelectedBrowsers() {
   const browsers = [];
   if (document.getElementById('browser-chrome')?.checked)  browsers.push('chrome');
   if (document.getElementById('browser-firefox')?.checked) browsers.push('firefox');
+  if (document.getElementById('browser-safari')?.checked)  browsers.push('safari');
   return browsers;
 }
 
@@ -2013,14 +2017,15 @@ function fileToGroupKey(f) {
 }
 
 // Which browsers a spec runs on, mirroring the testMatch rules in playwright.config.ts:
-// the extension spec is matched by every project, so it runs on whatever the user
-// selected; anything else is Chrome-only unless the filename names a browser.
-// Returns null to mean "every selected browser".
+// the extension spec is matched by every Chrome/Firefox/Edge project (not Safari, which
+// has its own dedicated spec), so it runs on whichever of those the user selected;
+// anything else is Chrome-only unless the filename names a browser.
 function fileBrowserScope(f) {
   const lf = f.toLowerCase();
   if (lf.includes('firefox')) return ['firefox'];
   if (lf.includes('edge'))    return ['edge'];
-  if (EXTENSION_SPEC_RE.test(f)) return null;
+  if (lf.includes('safari'))  return ['safari'];
+  if (EXTENSION_SPEC_RE.test(f)) return ['chrome', 'firefox', 'edge'];
   return ['chrome'];
 }
 
@@ -2105,7 +2110,7 @@ function updateSelSummary() {
   if (badge) badge.textContent = selectedFiles.size;
 }
 
-const BROWSER_ABBR = { chrome: 'Chr', firefox: 'Ff', edge: 'Edg' };
+const BROWSER_ABBR = { chrome: 'Chr', firefox: 'Ff', edge: 'Edg', safari: 'Saf' };
 
 // Render one badge per browser the group will actually run on: the browsers the user
 // selected, narrowed to those the spec supports. Rebuilt on every selection change so
@@ -2194,9 +2199,10 @@ function ingestLine(rawLine, tag) {
     const status = isPass ? 'pass' : isFail ? 'fail' : isSkip ? 'skip' : 'pass';
     finalizeTest(suite, name, status, dur);
   } else if (!startParsed) {
-    // Append raw line to the current test's log group
+    // Append raw line to the current test's log group. Lines before the first test
+    // starts (setup banners, stray stderr) aren't tied to any test, so they're dropped
+    // rather than shown in the UI.
     if (currentTestKey) appendToTestLog(currentTestKey, clean, cls);
-    else appendToMeta(clean, cls);
   }
 
   // Show summary lines in output header
@@ -2476,35 +2482,6 @@ function appendToTestLog(key, line, cls) {
     e.groupBodyEl.appendChild(document.createTextNode('\n'));
   }
   e.lineCount++;
-}
-
-function appendToMeta(line, cls) {
-  if (!line.trim()) return;
-  if (!metaGroupEl) {
-    metaGroupEl = document.createElement('div');
-    metaGroupEl.className = 'log-group';
-    metaGroupEl.id = 'log-meta';
-    metaGroupEl.innerHTML = `
-      <div class="log-group-header" onclick="toggleGroup(this.parentElement)">
-        <div class="log-group-badge meta">≡</div>
-        <div class="log-group-name muted">Run info &amp; stderr</div>
-        <div class="log-group-duration"></div>
-        <div class="log-group-chevron">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-      </div>
-      <div class="log-group-body"></div>
-    `;
-    const logsBody = document.getElementById('output-rows');
-    logsBody.insertBefore(metaGroupEl, logsBody.firstChild);
-    metaGroupBodyEl = metaGroupEl.querySelector('.log-group-body');
-  }
-  const span = document.createElement('span');
-  span.className = 'log-line ' + cls;
-  span.textContent = line;
-  metaGroupBodyEl.appendChild(span);
-  metaGroupBodyEl.appendChild(document.createTextNode('\n'));
-  metaLineCount++;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2803,9 +2780,6 @@ function clearAll() {
   testMap.clear();
   suitesMap.clear();
   currentTestKey = null;
-  metaGroupEl = null;
-  metaGroupBodyEl = null;
-  metaLineCount = 0;
   rawLineCount = 0;
   document.getElementById('output-rows').innerHTML = '';
   document.getElementById('suite-overview').innerHTML = '';

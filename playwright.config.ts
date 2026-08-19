@@ -35,6 +35,10 @@ export default defineConfig({
         name: 'system-firefox',
         testMatch: ['**/extension-load-and-login.spec.ts'],
       },
+      {
+        name: 'system-safari',
+        testMatch: ['**/safari-extension-load.spec.ts'],
+      },
     ] : []),
 
     // ── Windows projects (skipped on macOS) ────────────────────────────────
