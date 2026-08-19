@@ -405,9 +405,11 @@ app.post('/api/run', (req, res) => {
     }
   }
 
-  // Sanitise grep — strip shell metacharacters; Playwright --grep is passed as a regex string
-  const safeGrep = typeof grep === 'string'
-    ? grep.replace(/[`$\\|;&><(){}!]/g, '')
+  // grep is passed as a single argv entry with shell: false, so no shell interpretation
+  // occurs and regex metacharacters ($ | ( ) \) must survive — the UI relies on them to
+  // anchor exact test titles and to alternate when re-running several failed tests.
+  const safeGrep = typeof grep === 'string' && grep.trim()
+    ? grep.slice(0, 2000)
     : undefined;
 
   runLog = [];

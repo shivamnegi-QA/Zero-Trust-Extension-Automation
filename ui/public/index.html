@@ -2558,11 +2558,11 @@ async function stopRun() {
 }
 
 // Build an exact-match grep pattern for a single test.
-// Playwright matches --grep against the full title: "Suite Name > Test Name"
-// Anchoring with " > test name$" ensures only that exact test is selected.
+// Playwright matches --grep against the space-joined title: "Suite Name Test Name"
+// Anchoring with a trailing $ ensures only that exact test is selected.
 function exactGrepFor(suite, name) {
   const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return esc(suite) + ' > ' + esc(name) + '$';
+  return esc(suite) + ' ' + esc(name) + '$';
 }
 
 async function runSingleTest(file, suiteName, testName) {
@@ -2571,7 +2571,7 @@ async function runSingleTest(file, suiteName, testName) {
   await fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files: file ? [file] : [], grep: exactGrepFor(suiteName, testName), browsers: browsers.length ? browsers : undefined }),
+    body: JSON.stringify({ files: file ? [file] : [], grep: exactGrepFor(suiteName, testName), browsers: browsers.length ? browsers : undefined, platform: selectedOs }),
   });
 }
 
@@ -2604,7 +2604,7 @@ function rerunFailed() {
   fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files, grep, browsers: browsers.length ? browsers : undefined }),
+    body: JSON.stringify({ files, grep, browsers: browsers.length ? browsers : undefined, platform: selectedOs }),
   });
 }
 
