@@ -16,9 +16,15 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/test-results', express.static(path.join(__dirname, '..', 'test-results')));
 // Serve Playwright HTML report under /report
 app.use('/report', express.static(path.join(__dirname, '..', 'reports', 'html')));
+// Serve archived per-run artifacts (screenshots, videos) under /run-history
+app.use('/run-history', express.static(path.join(__dirname, '..', 'run-history')));
 
 const ROOT = path.resolve(__dirname, '..');
 const TESTS_DIR = path.join(ROOT, 'tests');
+const HISTORY_DIR = path.join(ROOT, 'run-history');
+// Playwright wipes test-results/ at the start of every run, so failure artifacts are
+// copied into each run's history folder to keep older screenshots viewable.
+const HISTORY_LIMIT = 50;
 
 // Active run state
 let activeRun: ChildProcess | null = null;
@@ -31,6 +37,143 @@ function broadcast(event: string, data: unknown) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   sseClients = sseClients.filter((res) => !res.writableEnded);
   sseClients.forEach((res) => res.write(payload));
+}
+
+// ── Run history ───────────────────────────────────────────────────────────────
+
+type HistoryTest = {
+  suite: string;
+  name: string;
+  project: string;
+  status: string;
+  durationMs: number;
+  /** Failure message and the spec line it failed on, when Playwright reports one. */
+  error?: string;
+  failedAt?: string;
+  screenshot?: string;
+  video?: string;
+  stdout?: string[];
+};
+
+type HistoryRun = {
+  id: string;
+  startedAt: string;
+  durationMs: number;
+  status: string;
+  browsers: string[];
+  files: string[];
+  grep?: string;
+  counts: { passed: number; failed: number; skipped: number; flaky: number };
+  tests: HistoryTest[];
+  log: string[];
+};
+
+function readRunIds(): string[] {
+  try {
+    return fs.readdirSync(HISTORY_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && fs.existsSync(path.join(HISTORY_DIR, e.name, 'run.json')))
+      .map((e) => e.name)
+      .sort()
+      .reverse(); // ids are timestamp-prefixed, so lexical desc == newest first
+  } catch { return []; }
+}
+
+function pruneHistory() {
+  readRunIds().slice(HISTORY_LIMIT).forEach((id) => {
+    fs.rmSync(path.join(HISTORY_DIR, id), { recursive: true, force: true });
+  });
+}
+
+// Flatten the JSON reporter's nested suites. The describe() title lives on the innermost
+// parent suite (the outermost one is the spec filename), so carry it down with each spec.
+function collectSpecs(node: any, suiteTitle = '', out: Array<{ spec: any; suite: string }> = []) {
+  (node.specs ?? []).forEach((spec: any) => out.push({ spec, suite: suiteTitle }));
+  (node.suites ?? []).forEach((sub: any) => collectSpecs(sub, sub.title ?? suiteTitle, out));
+  return out;
+}
+
+function firstAttachment(attachments: any[], kind: string): string | undefined {
+  return attachments?.find((a) => a?.name === kind && typeof a.path === 'string')?.path;
+}
+
+// Copy an artifact out of test-results/ before the next run deletes it.
+function archiveArtifact(srcPath: string, runDir: string): string | undefined {
+  try {
+    if (!fs.existsSync(srcPath)) return undefined;
+    const artifactsDir = path.join(runDir, 'artifacts');
+    fs.mkdirSync(artifactsDir, { recursive: true });
+    // Keep the parent folder name — Playwright names it after the test, so it stays unique.
+    const unique = `${path.basename(path.dirname(srcPath))}-${path.basename(srcPath)}`.replace(/[^\w.-]+/g, '_');
+    fs.copyFileSync(srcPath, path.join(artifactsDir, unique));
+    return unique;
+  } catch { return undefined; }
+}
+
+function recordRun(opts: {
+  jsonPath: string;
+  status: string;
+  browsers: string[];
+  files: string[];
+  grep?: string;
+  log: string[];
+}): void {
+  let report: any;
+  try { report = JSON.parse(fs.readFileSync(opts.jsonPath, 'utf8')); } catch { return; }
+
+  const stats = report.stats ?? {};
+  const startedAt: string = stats.startTime ?? new Date().toISOString();
+  const id = `${startedAt.replace(/[:.]/g, '-')}`;
+  const runDir = path.join(HISTORY_DIR, id);
+
+  try { fs.mkdirSync(runDir, { recursive: true }); } catch { return; }
+
+  const tests: HistoryTest[] = [];
+  (report.suites ?? []).forEach((s: any) => {
+    collectSpecs(s, s.title ?? '').forEach(({ spec, suite }) => {
+      (spec.tests ?? []).forEach((t: any) => {
+        const r = (t.results ?? [])[(t.results ?? []).length - 1] ?? {};
+        const err = (r.errors ?? [])[0]?.message ?? r.error?.message;
+        const shot = firstAttachment(r.attachments, 'screenshot');
+        const vid = firstAttachment(r.attachments, 'video');
+        tests.push({
+          suite,
+          name: spec.title,
+          project: t.projectName ?? '',
+          status: r.status ?? t.status ?? 'unknown',
+          durationMs: r.duration ?? 0,
+          error: err ? String(err).replace(/\x1B\[[0-9;]*m/g, '').slice(0, 4000) : undefined,
+          failedAt: r.status && r.status !== 'passed' ? `${spec.file}:${spec.line}` : undefined,
+          screenshot: shot ? archiveArtifact(shot, runDir) : undefined,
+          video: vid ? archiveArtifact(vid, runDir) : undefined,
+          stdout: (r.stdout ?? []).map((o: any) => (typeof o === 'string' ? o : o?.text ?? '')).slice(-40),
+        });
+      });
+    });
+  });
+
+  const run: HistoryRun = {
+    id,
+    startedAt,
+    durationMs: Math.round(stats.duration ?? 0),
+    status: opts.status,
+    browsers: opts.browsers,
+    files: opts.files,
+    grep: opts.grep,
+    counts: {
+      passed: tests.filter((t) => t.status === 'passed').length,
+      failed: tests.filter((t) => t.status === 'failed' || t.status === 'timedOut').length,
+      skipped: tests.filter((t) => t.status === 'skipped').length,
+      flaky: stats.flaky ?? 0,
+    },
+    tests,
+    log: opts.log.slice(-500),
+  };
+
+  try {
+    fs.writeFileSync(path.join(runDir, 'run.json'), JSON.stringify(run, null, 2));
+    pruneHistory();
+    broadcast('history', { id });
+  } catch { /* history is best-effort; never fail a run over it */ }
 }
 
 // Validate that a user-supplied relative file path stays inside TESTS_DIR.
@@ -349,6 +492,31 @@ app.get('/api/events', (req, res) => {
   });
 });
 
+// GET /api/history — run summaries, newest first (no per-test detail)
+app.get('/api/history', (_req, res) => {
+  const runs = readRunIds().slice(0, HISTORY_LIMIT).flatMap((id) => {
+    try {
+      const run = JSON.parse(fs.readFileSync(path.join(HISTORY_DIR, id, 'run.json'), 'utf8'));
+      const { tests, log, ...summary } = run;
+      return [{ ...summary, testCount: tests?.length ?? 0 }];
+    } catch { return []; }
+  });
+  res.json({ runs });
+});
+
+// GET /api/history/:id — full detail for one run
+app.get('/api/history/:id', (req, res) => {
+  // Reject anything that isn't a known run id, so the param can't escape HISTORY_DIR
+  const id = String(req.params.id);
+  if (!readRunIds().includes(id)) return res.status(404).json({ error: 'Run not found' });
+  try {
+    const run = JSON.parse(fs.readFileSync(path.join(HISTORY_DIR, id, 'run.json'), 'utf8'));
+    res.json({ run });
+  } catch {
+    res.status(500).json({ error: 'Could not read run' });
+  }
+});
+
 // GET /api/platform — returns the actual OS this server is running on
 app.get('/api/platform', (_req, res) => {
   res.json({ platform: process.platform === 'win32' ? 'windows' : 'mac' });
@@ -417,7 +585,10 @@ app.post('/api/run', (req, res) => {
   broadcast('status', { status: 'running' });
   broadcast('run-files', { files: safeFiles });
 
-  const args = ['playwright', 'test', '--reporter=list', '--workers=1'];
+  // list drives the live output stream; json gives history structured results,
+  // failure messages, and attachment paths without re-parsing the list text.
+  const jsonReportPath = path.join(ROOT, 'reports', 'last-run.json');
+  const args = ['playwright', 'test', '--reporter=list,json', '--workers=1'];
 
   // --project=NAME, not --project NAME: with the space form Playwright treats the
   // following argv entry (a spec path or grep) as another project name and aborts.
@@ -442,6 +613,7 @@ app.post('/api/run', (req, res) => {
       ...process.env,
       FORCE_COLOR: '0',
       PW_TEST_DEBUG_ERRORS: '1',
+      PLAYWRIGHT_JSON_OUTPUT_NAME: jsonReportPath,
     },
     shell: false,
     detached: !IS_WINDOWS,
@@ -477,6 +649,15 @@ app.post('/api/run', (req, res) => {
     runStatus = stopped ? 'idle' : (code === 0 ? 'passed' : 'failed');
     broadcast('status', { status: runStatus });
     activeRun = null;
+    // Archive even stopped runs — a partial result is still useful history.
+    recordRun({
+      jsonPath: jsonReportPath,
+      status: stopped ? 'stopped' : runStatus,
+      browsers: activeBrowsers,
+      files: safeFiles,
+      grep: safeGrep,
+      log: runLog,
+    });
   });
 
   res.json({ started: true });

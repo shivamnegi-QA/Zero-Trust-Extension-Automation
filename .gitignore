@@ -5,6 +5,8 @@ dist/
 reports/
 test-results/
 *.png
+# Run history is tracked, so its archived failure screenshots override *.png above
+!run-history/**/*.png
 .DS_Store
 .claude/
 .mcp.json

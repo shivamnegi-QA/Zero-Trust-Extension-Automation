@@ -29,6 +29,12 @@
 
       --accent-dim:  rgba(0,212,255,0.1);
       --accent-glow: rgba(0,212,255,0.25);
+      /* Primary button: lighter tints of the page's cyan → violet ramp, carrying dark ink. */
+      --btn-primary-from: #38BDF8;
+      --btn-primary-mid:  #818CF8;
+      --btn-primary-to:   #A78BFA;
+      --btn-primary-ink:  #0A0E1A;
+      --btn-primary-glow: rgba(129,140,248,0.35);
       --done-dim:    rgba(34,197,94,0.1);
       --done-glow:   rgba(34,197,94,0.25);
       --wip-dim:     rgba(245,158,11,0.1);
@@ -52,23 +58,30 @@
 
     /* ── Light theme ──────────────────────────────────────────────────────── */
     [data-theme="light"] {
-      --bg:        #F0F4F8;
-      --bg-2:      #E8EDF5;
+      --bg:        #F2F5FF;
+      --bg-gradient: linear-gradient(135deg, #EAF2FF 0%, #F1F0FE 50%, #F3EEFE 100%);
+      --bg-2:      #E9EEFC;
       --card:      #FFFFFF;
-      --card-2:    #F7F9FC;
-      --border:    #D1DBE8;
-      --border-2:  #B8CADC;
+      --card-2:    #F9FAFE;
+      --border:    #D8DFF5;
+      --border-2:  #C3CDEE;
       --accent:    #0891B2;
       --accent-2:  #6D28D9;
       --done:      #16A34A;
       --wip:       #D97706;
       --danger:    #DC2626;
       --text:      #0F172A;
-      --muted:     #64748B;
+      --muted:     #5B677D;
       --muted-2:   #475569;
 
       --accent-dim:  rgba(8,145,178,0.08);
       --accent-glow: rgba(8,145,178,0.2);
+      /* Saturated end of the page's blue → purple ramp so white ink reads on a light UI. */
+      --btn-primary-from: #2563EB;
+      --btn-primary-mid:  #4F46E5;
+      --btn-primary-to:   #6D28D9;
+      --btn-primary-ink:  #FFFFFF;
+      --btn-primary-glow: rgba(79,70,229,0.32);
       --done-dim:    rgba(22,163,74,0.08);
       --done-glow:   rgba(22,163,74,0.2);
       --wip-dim:     rgba(217,119,6,0.08);
@@ -76,13 +89,13 @@
       --danger-dim:  rgba(220,38,38,0.08);
       --danger-glow: rgba(220,38,38,0.2);
 
-      --header-bg:  rgba(240,244,248,0.95);
-      --sidebar-bg: #E8EDF5;
-      --controls-bg: rgba(240,244,248,0.9);
-      --tab-bar-bg: rgba(240,244,248,0.95);
-      --footer-bg:  rgba(240,244,248,0.95);
-      --pane-header-bg: rgba(248,250,252,0.9);
-      --log-body-bg: rgba(248,250,252,0.7);
+      --header-bg:  rgba(238,244,255,0.95);
+      --sidebar-bg: #E9EEFC;
+      --controls-bg: rgba(240,244,255,0.9);
+      --tab-bar-bg: rgba(242,245,255,0.95);
+      --footer-bg:  rgba(243,240,254,0.95);
+      --pane-header-bg: rgba(249,250,254,0.9);
+      --log-body-bg: rgba(249,250,254,0.7);
 
       --blur: blur(14px) saturate(150%);
     }
@@ -93,7 +106,7 @@
     html, body { height: 100%; overflow: hidden; }
 
     body {
-      background: var(--bg);
+      background: var(--bg-gradient, var(--bg));
       color: var(--text);
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 13px;
@@ -450,10 +463,10 @@
     }
     .btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
     .btn-primary {
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      color: #0A0E1A; box-shadow: 0 0 14px var(--accent-glow);
+      background: linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-mid), var(--btn-primary-to));
+      color: var(--btn-primary-ink); box-shadow: 0 0 14px var(--btn-primary-glow);
     }
-    .btn-primary:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,212,255,0.35); }
+    .btn-primary:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 10px 26px var(--btn-primary-glow); }
     .btn-danger {
       background: var(--danger-dim); border-color: rgba(239,68,68,0.25); color: var(--danger);
     }
@@ -578,6 +591,77 @@
       display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0;
     }
     #tab-output.active { display: flex; }
+
+    /* ── History tab ────────────────────────────────────────────────────────── */
+    #tab-history { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
+    #tab-history.active { display: flex; }
+    #history-body { flex: 1; overflow-y: auto; padding: 12px 16px 24px; min-height: 0; }
+    .history-hint { font-size: 11px; color: var(--muted); }
+    .history-run {
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--card); margin-bottom: 8px; overflow: hidden;
+    }
+    .history-run-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; cursor: pointer; user-select: none;
+    }
+    .history-run-header:hover { background: var(--card-2); }
+    .history-caret { color: var(--muted); flex-shrink: 0; transition: transform .15s; }
+    .history-run.open .history-caret { transform: rotate(90deg); }
+    .history-when { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+    .history-rel { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .history-spacer { flex: 1; min-width: 0; }
+    .history-chip {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+      padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted);
+      white-space: nowrap;
+    }
+    .history-chip.pass { background: var(--done-dim); color: var(--done); border-color: rgba(34,197,94,0.3); }
+    .history-chip.fail { background: var(--danger-dim); color: var(--danger); border-color: rgba(239,68,68,0.3); }
+    .history-chip.skip { background: var(--wip-dim); color: var(--wip); border-color: rgba(245,158,11,0.3); }
+    .history-body-inner { display: none; border-top: 1px solid var(--border); padding: 10px 12px; }
+    .history-run.open .history-body-inner { display: block; }
+    .history-meta {
+      display: flex; flex-wrap: wrap; gap: 6px 16px;
+      font-size: 11px; color: var(--muted); margin-bottom: 10px;
+    }
+    .history-meta b { color: var(--text); font-weight: 600; }
+    .history-test {
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; margin-bottom: 6px; background: var(--card-2);
+    }
+    .history-test-top { display: flex; align-items: center; gap: 8px; }
+    .history-test-name { font-size: 12px; color: var(--text); flex: 1; min-width: 0; }
+    .history-test-suite { font-size: 10px; color: var(--muted); }
+    .history-test-dur { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
+    .history-fail-detail { margin-top: 7px; padding-left: 2px; }
+    .history-failed-at {
+      font-size: 11px; font-family: var(--font-mono); color: var(--danger); margin-bottom: 5px;
+    }
+    .history-error {
+      font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+      background: var(--log-body-bg); border: 1px solid var(--border); border-radius: 5px;
+      padding: 7px 9px; white-space: pre-wrap; word-break: break-word;
+      max-height: 190px; overflow-y: auto; color: var(--text);
+    }
+    .history-shot {
+      margin-top: 7px; display: inline-block; border: 1px solid var(--border);
+      border-radius: 5px; overflow: hidden; cursor: pointer; line-height: 0;
+    }
+    .history-shot img { max-width: 320px; height: auto; display: block; }
+    .history-shot:hover { border-color: var(--accent); }
+    .history-logs { margin-top: 10px; }
+    .history-logs summary {
+      cursor: pointer; font-size: 11px; color: var(--muted); user-select: none;
+      padding: 4px 0;
+    }
+    .history-logs summary:hover { color: var(--text); }
+    .history-logs pre {
+      font-family: var(--font-mono); font-size: 10.5px; line-height: 1.55;
+      background: var(--log-body-bg); border: 1px solid var(--border); border-radius: 5px;
+      padding: 8px 10px; margin-top: 5px; max-height: 260px; overflow: auto;
+      white-space: pre-wrap; word-break: break-word; color: var(--muted-2);
+    }
 
     .pane-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -985,7 +1069,7 @@
       background: rgba(10,14,26,0.55); border: 1px solid var(--border);
       border-radius: 8px; overflow: hidden;
     }
-    [data-theme="light"] .detail-log-panel { background: rgba(240,244,248,0.8); }
+    [data-theme="light"] .detail-log-panel { background: rgba(241,244,254,0.8); }
     .detail-log-panel.open { display: block; }
     .detail-log-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -1087,7 +1171,7 @@
       border: 2px solid rgba(10,14,26,0.3); border-top-color: #0A0E1A;
       border-radius: 50%; animation: spin .6s linear infinite;
     }
-    [data-theme="light"] .spin { border-color: rgba(240,244,248,0.4); border-top-color: var(--bg); }
+    [data-theme="light"] .spin { border-color: rgba(241,244,254,0.4); border-top-color: var(--bg); }
 
     /* ── Toast ───────────────────────────────────────────────────────────────── */
     #toast {
@@ -1334,14 +1418,20 @@
 
     <!-- Tab bar -->
     <div class="tab-bar">
-      <button class="tab-btn active" id="tab-btn-output">
+      <button class="tab-btn active" id="tab-btn-output" onclick="switchTab('output')">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
         </svg>
         Test Case Execution
         <span class="tab-badge" id="output-count">0</span>
       </button>
-
+      <button class="tab-btn" id="tab-btn-history" onclick="switchTab('history')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/>
+        </svg>
+        History
+        <span class="tab-badge" id="history-count">0</span>
+      </button>
     </div>
 
     <!-- Output tab -->
@@ -1393,6 +1483,26 @@
             <div class="result-time-lbl">Duration</div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- History tab -->
+    <div id="tab-history" class="tab-pane">
+      <div class="pane-header">
+        <div class="pane-header-left">
+          <span class="pane-title">Run History</span>
+          <span class="history-hint" id="history-hint"></span>
+        </div>
+        <div class="pane-header-right">
+          <button class="btn btn-ghost btn-sm" onclick="loadHistory()">Refresh</button>
+        </div>
+      </div>
+      <div id="history-body">
+        <div class="output-empty" id="history-empty">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 7 12 12 16 14"/></svg>
+          No runs recorded yet — finish a run to see it here
+        </div>
+        <div id="history-list"></div>
       </div>
     </div>
 
@@ -1852,11 +1962,14 @@ async function init() {
     (log ?? []).forEach(line => ingestLine(line, line.startsWith('[stderr]') ? 'stderr' : 'stdout'));
   } catch (_) { setStatus('idle'); }
 
+  loadHistory();
+
   function connectSSE() {
     if (es) { try { es.close(); } catch (_) {} }
     es = new EventSource('/api/events');
     es.addEventListener('status',    e => { const d = JSON.parse(e.data); setStatus(d.status); });
     es.addEventListener('log',       e => { const d = JSON.parse(e.data); ingestLine(d.line, d.tag); });
+    es.addEventListener('history',   () => { loadHistory(); });
     es.addEventListener('run-files', e => {
       const d = JSON.parse(e.data);
       if (d.files && d.files.length > 0) {
@@ -2499,6 +2612,151 @@ function formatDuration(secs) {
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tabs + run history
+// ─────────────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  ['output', 'history'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('tab-btn-' + t).classList.toggle('active', t === name);
+  });
+  if (name === 'history') loadHistory();
+}
+
+function relativeTime(iso) {
+  const then = new Date(iso).getTime();
+  if (!then) return '';
+  const secs = Math.max(0, (Date.now() - then) / 1000);
+  if (secs < 60)    return 'just now';
+  if (secs < 3600)  return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function absoluteTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
+async function loadHistory() {
+  let runs = [];
+  try {
+    const r = await fetch('/api/history');
+    runs = (await r.json()).runs ?? [];
+  } catch (_) { runs = []; }
+
+  document.getElementById('history-count').textContent = runs.length;
+  document.getElementById('history-empty').style.display = runs.length ? 'none' : '';
+  document.getElementById('history-hint').textContent =
+    runs.length ? `${runs.length} run${runs.length !== 1 ? 's' : ''}, newest first` : '';
+
+  const list = document.getElementById('history-list');
+  list.innerHTML = '';
+  // Server already sorts newest-first by timestamp id; sort again so the UI is
+  // correct even if that ever changes.
+  runs.sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+
+  runs.forEach(run => {
+    const wrap = document.createElement('div');
+    wrap.className = 'history-run';
+    wrap.dataset.runId = run.id;
+
+    const c = run.counts ?? {};
+    const chips = [
+      c.passed  ? `<span class="history-chip pass">${c.passed} passed</span>` : '',
+      c.failed  ? `<span class="history-chip fail">${c.failed} failed</span>` : '',
+      c.skipped ? `<span class="history-chip skip">${c.skipped} skipped</span>` : '',
+      `<span class="history-chip">${formatDuration((run.durationMs ?? 0) / 1000)}</span>`,
+      `<span class="history-chip ${run.status === 'passed' ? 'pass' : run.status === 'failed' ? 'fail' : ''}">${escHtml(run.status)}</span>`,
+    ].join('');
+
+    wrap.innerHTML = `
+      <div class="history-run-header">
+        <svg class="history-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        <span class="history-when">${escHtml(absoluteTime(run.startedAt))}</span>
+        <span class="history-rel">${escHtml(relativeTime(run.startedAt))}</span>
+        <span class="history-spacer"></span>
+        ${chips}
+      </div>
+      <div class="history-body-inner"><div class="history-detail-slot"></div></div>
+    `;
+
+    wrap.querySelector('.history-run-header').addEventListener('click', () => {
+      const opening = !wrap.classList.contains('open');
+      wrap.classList.toggle('open', opening);
+      if (opening) renderRunDetail(run.id, wrap.querySelector('.history-detail-slot'));
+    });
+
+    list.appendChild(wrap);
+  });
+}
+
+const STATUS_CHIP = { passed: 'pass', failed: 'fail', timedOut: 'fail', skipped: 'skip' };
+
+async function renderRunDetail(runId, slot) {
+  if (slot.dataset.loaded === '1') return;
+  slot.innerHTML = '<div class="history-rel">Loading…</div>';
+
+  let run;
+  try {
+    const r = await fetch(`/api/history/${encodeURIComponent(runId)}`);
+    if (!r.ok) throw new Error(String(r.status));
+    run = (await r.json()).run;
+  } catch (_) {
+    slot.innerHTML = '<div class="history-rel">Could not load this run.</div>';
+    return;
+  }
+
+  const meta = [
+    run.browsers?.length ? `Browsers <b>${escHtml(run.browsers.join(', '))}</b>` : '',
+    run.files?.length    ? `Specs <b>${escHtml(run.files.join(', '))}</b>` : '',
+    run.grep             ? `Filter <b>${escHtml(run.grep)}</b>` : '',
+    `Started <b>${escHtml(absoluteTime(run.startedAt))}</b>`,
+    `Duration <b>${escHtml(formatDuration((run.durationMs ?? 0) / 1000))}</b>`,
+  ].filter(Boolean).join('');
+
+  const tests = (run.tests ?? []).map(t => {
+    const chip = STATUS_CHIP[t.status] ?? '';
+    const failed = t.status !== 'passed' && t.status !== 'skipped';
+    const shotUrl = t.screenshot
+      ? `/run-history/${encodeURIComponent(run.id)}/artifacts/${encodeURIComponent(t.screenshot)}`
+      : null;
+
+    const detail = !failed ? '' : `
+      <div class="history-fail-detail">
+        ${t.failedAt ? `<div class="history-failed-at">Failed at ${escHtml(t.failedAt)}</div>` : ''}
+        ${t.error ? `<div class="history-error">${escHtml(t.error)}</div>` : ''}
+        ${shotUrl ? `<div class="history-shot" data-shot="${escHtml(shotUrl)}" data-name="${escHtml(t.name)}"><img src="${escHtml(shotUrl)}" alt="Failure screenshot" loading="lazy"></div>` : ''}
+      </div>`;
+
+    return `
+      <div class="history-test">
+        <div class="history-test-top">
+          <span class="history-chip ${chip}">${escHtml(t.status)}</span>
+          <span class="history-test-name">${escHtml(t.name)} <span class="history-test-suite">— ${escHtml(t.suite)}${t.project ? ' · ' + escHtml(t.project) : ''}</span></span>
+          <span class="history-test-dur">${escHtml(formatDuration((t.durationMs ?? 0) / 1000))}</span>
+        </div>
+        ${detail}
+      </div>`;
+  }).join('');
+
+  slot.innerHTML = `
+    <div class="history-meta">${meta}</div>
+    ${tests || '<div class="history-rel">No test results captured for this run.</div>'}
+    ${run.log?.length ? `<details class="history-logs"><summary>Run log (${run.log.length} lines)</summary><pre>${escHtml(run.log.join('\n'))}</pre></details>` : ''}
+  `;
+
+  slot.querySelectorAll('.history-shot').forEach(el => {
+    el.addEventListener('click', () => openScreenshotModal(el.dataset.shot, el.dataset.name));
+  });
+
+  slot.dataset.loaded = '1';
 }
 function cap(s) {
   const str = String(s);
