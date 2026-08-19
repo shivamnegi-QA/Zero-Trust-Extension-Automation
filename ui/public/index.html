@@ -133,10 +133,6 @@
       50%       { opacity: 0.65; box-shadow: 0 0 0 4px transparent; }
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes row-in {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
     @keyframes suite-in {
       from { opacity: 0; transform: translateY(4px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -724,56 +720,6 @@
       font-weight: 500; letter-spacing: 0.3px;
     }
 
-    .output-row {
-      display: flex; flex-direction: column;
-      border-radius: var(--radius-sm);
-      border: 1px solid transparent;
-      background: linear-gradient(160deg, var(--card) 0%, var(--card-2) 100%);
-      margin-bottom: 5px;
-      animation: row-in .2s ease both;
-      transition: border-color .15s, box-shadow .15s;
-    }
-    .output-row:hover { border-color: rgba(0,212,255,0.2); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
-
-    .row-top {
-      display: flex; align-items: center; gap: 12px;
-      padding: 8px 12px; cursor: pointer; user-select: none;
-    }
-
-    .row-log-body {
-      display: none;
-      padding: 8px 14px 10px 46px;
-      border-top: 1px solid var(--border);
-      background: var(--log-body-bg);
-      border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-      font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.75;
-    }
-    .output-row.open .row-log-body { display: block; }
-    .output-row.fail-row .row-log-body { display: block; }
-
-    .row-chevron {
-      color: var(--muted); flex-shrink: 0; transition: transform .2s; display: flex; align-items: center;
-    }
-    .output-row.open .row-chevron,
-    .output-row.fail-row .row-chevron { transform: rotate(90deg); color: var(--accent); }
-
-    .row-icon {
-      width: 22px; height: 22px; border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-    .row-icon svg { display: block; }
-    .row-icon.pass    { background: var(--done-dim);   color: var(--done);   border: 1px solid rgba(34,197,94,0.25); }
-    .row-icon.fail    { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.25); }
-    .row-icon.skip    { background: var(--wip-dim);    color: var(--wip);    border: 1px solid rgba(245,158,11,0.25); }
-    .row-icon.running { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,212,255,0.25); }
-    .row-icon.pending { background: rgba(255,255,255,0.03); color: var(--muted); border: 1px solid var(--border); }
-
-    .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .row-name { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .row-suite { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .row-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-    .row-duration { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; font-weight: 500; }
     .row-link {
       font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
       color: var(--accent); text-decoration: none;
@@ -834,59 +780,6 @@
     .result-time-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; font-weight: 600; }
 
 
-    .log-group {
-      margin-bottom: 8px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-    .log-group:target { border-color: rgba(0,212,255,0.4); box-shadow: 0 0 0 2px rgba(0,212,255,0.1); }
-
-    .log-group-header {
-      display: flex; align-items: center; gap: 10px;
-      padding: 9px 14px; cursor: pointer; user-select: none;
-      background: linear-gradient(160deg, var(--card), var(--card-2));
-      border-radius: var(--radius) var(--radius) 0 0;
-      transition: background .12s;
-    }
-    .log-group:not(.open) .log-group-header { border-radius: var(--radius); }
-    .log-group-header:hover { background: linear-gradient(160deg, var(--card-2), var(--bg-2)); }
-
-    .log-group-badge {
-      width: 18px; height: 18px; border-radius: 5px;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    .log-group-badge svg { display: block; }
-    .log-group-badge.pass    { background: var(--done-dim);   color: var(--done);   border: 1px solid rgba(34,197,94,0.25); }
-    .log-group-badge.fail    { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.25); }
-    .log-group-badge.skip    { background: var(--wip-dim);    color: var(--wip);    border: 1px solid rgba(245,158,11,0.25); }
-    .log-group-badge.running { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,212,255,0.25); }
-    .log-group-badge.pending { background: rgba(255,255,255,0.03); color: var(--muted); border: 1px solid var(--border); }
-
-    .log-group-name { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .log-group-name.muted { color: var(--muted); font-weight: 500; font-size: 11px; }
-    .log-group-duration { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
-    .log-group-chevron { color: var(--muted); flex-shrink: 0; transition: transform .2s; display: flex; align-items: center; }
-    .log-group.open .log-group-chevron { transform: rotate(90deg); }
-
-    .log-group-body {
-      display: none; padding: 10px 14px 12px;
-      border-top: 1px solid var(--border);
-      background: var(--log-body-bg);
-      border-radius: 0 0 var(--radius) var(--radius);
-      font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.75;
-    }
-    .log-group.open .log-group-body { display: block; }
-    .log-group.fail-group.open .log-group-body { display: block; }
-
-    .log-line { display: block; }
-    .log-line.pass    { color: var(--done); }
-    .log-line.fail    { color: var(--danger); font-weight: 500; }
-    .log-line.skip    { color: var(--wip); }
-    .log-line.warn    { color: var(--wip); }
-    .log-line.info    { color: var(--accent); }
-    .log-line.muted   { color: var(--muted); }
-    .log-line.detail  { color: var(--muted-2); padding-left: 2em; font-size: 11px; }
-    .log-line.sep     { color: var(--border-2); }
 
     /* Step rows — fixture setup lines and console.log output */
     .log-step {
@@ -981,18 +874,6 @@
                        background:transparent;cursor:pointer;color:var(--accent);margin-left:4px; }
     .suite-test-row:hover .suite-test-run { opacity:1; pointer-events:auto; }
     .suite-test-run:hover { background:var(--accent-dim); border-color:var(--accent); }
-
-    /* ── Run button on output-row (hover-reveal) ────────────────────────────── */
-    .output-row-run {
-      flex-shrink: 0; opacity: 0; pointer-events: none;
-      display: flex; align-items: center; justify-content: center;
-      width: 22px; height: 22px; border-radius: 5px;
-      border: 1px solid var(--border); background: transparent;
-      cursor: pointer; color: var(--accent);
-      transition: opacity .15s, background .12s, border-color .12s;
-    }
-    .output-row:hover .output-row-run { opacity: 1; pointer-events: auto; }
-    .output-row-run:hover { background: var(--accent-dim); border-color: var(--accent); }
 
     /* ── Checkboxes on suite-test-rows for multi-select ─────────────────────── */
     .suite-test-cb {
@@ -1459,7 +1340,6 @@
         </div>
         <div id="output-summary" style="display:none;"></div>
         <div id="suite-overview" style="padding:12px 12px 0;"></div>
-        <div id="output-rows"></div>
       </div>
       <div id="result-bar">
         <div class="result-card pass-card">
@@ -2257,44 +2137,18 @@ function parseTestLine(clean) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test entries — Output tab rows & Logs tab groups
+// Test entries — back each testMap entry with its suite-test-row and detail
+// log body directly, rather than a separate output-row element, so a test's
+// live status/duration/logs render in one place instead of two.
 // ─────────────────────────────────────────────────────────────────────────────
 function ensureTestEntry(suite, name, status = 'pending') {
   const key = `${suite}::${name}`;
   if (testMap.has(key)) return key;
 
-  const row = document.createElement('div');
-  row.className = 'output-row';
-  row.innerHTML = `
-    <div class="row-top">
-      <div class="row-icon pending" data-tip="Pending">${ICON_PENDING}</div>
-      <div class="row-main">
-        <div class="row-name">${escHtml(cap(name))}</div>
-        <div class="row-suite">${escHtml(suite)}</div>
-      </div>
-      <div class="row-right">
-        <div class="row-duration"></div>
-        <button class="output-row-run" data-tip="Run this test" onclick="event.stopPropagation();runOutputRow(this)">
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-        </button>
-        <div class="row-chevron">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-      </div>
-    </div>
-    <div class="row-log-body"></div>
-  `;
-  row.dataset.key = key;
-  row.querySelector('.row-top').addEventListener('click', () => row.classList.toggle('open'));
+  const row = ensureSuiteTestRow(suite, name);
+  const lgId = `lg-${key.replace(/[^a-z0-9]/gi, '-')}`;
+  const groupBodyEl = document.getElementById('dlb-' + lgId);
 
-  document.getElementById('output-empty').style.display = 'none';
-  document.getElementById('output-rows').appendChild(row);
-
-  const groupBodyEl = row.querySelector('.row-log-body');
-
-  ensureSuiteTestRow(suite, name);
-
-  // groupEl points to the row itself so existing finalize/badge code keeps working
   const entry = { suite, name, status, rowEl: row, groupEl: row, groupBodyEl, lineCount: 0, logLines: [], screenshotUrl: null };
   testMap.set(key, entry);
   updateOutputCount();
@@ -2309,8 +2163,6 @@ function setTestRunning(key) {
   const e = testMap.get(key);
   if (!e || e.status === 'running') return;
   e.status = 'running';
-  const ri = e.rowEl.querySelector('.row-icon');
-  ri.className = 'row-icon running'; ri.setAttribute('data-tip', 'Running'); ri.innerHTML = ICON_SPIN;
   updateSuiteTestRow(e.suite, e.name, 'running', null);
   updateOutputCount();
 }
@@ -2323,29 +2175,17 @@ function finalizeTest(suite, name, status, duration) {
   e.status = status;
   currentTestKey = key;
 
-  const iconHtml = iconForStatus(status);
+  updateSuiteTestRow(suite, name, status, duration);
 
-  const tipMap = { pass: 'Passed', fail: 'Failed', skip: 'Skipped', running: 'Running', pending: 'Pending' };
-
-  // Update output row
-  const rowIcon = e.rowEl.querySelector('.row-icon');
-  rowIcon.className = `row-icon ${status}`;
-  rowIcon.setAttribute('data-tip', tipMap[status] || status);
-  rowIcon.innerHTML = iconHtml;
-  if (duration) e.rowEl.querySelector('.row-duration').textContent = duration;
-
-  // Auto-open on fail
+  // Auto-open the detail panel on fail so the log/screenshot are immediately visible
   if (status === 'fail') {
-    e.rowEl.classList.add('fail-row');
+    e.rowEl.classList.add('open');
     loadScreenshot(e);
   }
 
   // Update footer last test
   document.getElementById('footer-last-test').textContent = cap(name);
   document.getElementById('footer-last-dur').textContent = duration ? `(${duration})` : '';
-
-  // Update tests tab
-  updateSuiteTestRow(suite, name, status, duration);
 
   updateOutputCount();
   updateRerunFailedBtn();
@@ -2366,7 +2206,7 @@ async function loadScreenshot(entry) {
     const shotBtn = document.querySelector(`.screenshot-btn[data-key="${lgId}"]`);
     if (shotBtn) { shotBtn.style.display = ''; shotBtn.classList.add('has-shot'); }
 
-    // Also add the old inline link in the output-row log body (failure row)
+    // Also add an inline link at the end of the detail log body
     if (!entry.groupBodyEl.querySelector('.screenshot-link')) {
       const link = document.createElement('a');
       link.className = 'screenshot-link';
@@ -2406,6 +2246,15 @@ function refreshDetailLog(key) {
     return;
   }
   for (const { line, cls } of e.logLines) {
+    if (cls === 'fixture' || cls === 'step') {
+      const variant = stepVariant(line, cls);
+      const icon    = stepIcon(variant);
+      const stepRow = document.createElement('div');
+      stepRow.className = `log-step ${variant}`;
+      stepRow.innerHTML = `<span class="log-step-icon">${escHtml(icon)}</span><span class="log-step-text">${escHtml(line.trim())}</span>`;
+      body.appendChild(stepRow);
+      continue;
+    }
     const span = document.createElement('span');
     const llCls = cls === 'pass' ? 'll-pass' : cls === 'fail' ? 'll-fail' : cls === 'warn' ? 'll-warn'
                 : cls === 'info' ? 'll-info' : cls === 'stderr' ? 'll-stderr'
@@ -2463,31 +2312,14 @@ function appendToTestLog(key, line, cls) {
   const e = testMap.get(key);
   if (!e || !line.trim()) return;
 
-  // Store for the detail-panel log viewer
   e.logLines.push({ line, cls });
   refreshDetailLog(key);
-
-  if (cls === 'fixture' || cls === 'step') {
-    const variant = stepVariant(line, cls);
-    const icon    = stepIcon(variant);
-    const row = document.createElement('div');
-    row.className = `log-step ${variant}`;
-    row.innerHTML = `<span class="log-step-icon">${escHtml(icon)}</span><span class="log-step-text">${escHtml(line.trim())}</span>`;
-    e.groupBodyEl.appendChild(row);
-  } else {
-    const span = document.createElement('span');
-    span.className = 'log-line ' + cls;
-    span.textContent = line;
-    e.groupBodyEl.appendChild(span);
-    e.groupBodyEl.appendChild(document.createTextNode('\n'));
-  }
   e.lineCount++;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-function toggleGroup(el) { el.classList.toggle('open'); }
 
 
 function updateOutputCount() {
@@ -2781,7 +2613,6 @@ function clearAll() {
   suitesMap.clear();
   currentTestKey = null;
   rawLineCount = 0;
-  document.getElementById('output-rows').innerHTML = '';
   document.getElementById('suite-overview').innerHTML = '';
   document.getElementById('output-empty').style.display = '';
   initTestsCatalogue();
@@ -2847,16 +2678,6 @@ async function runSingleTest(file, suiteName, testName) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ files: file ? [file] : [], grep: exactGrepFor(suiteName, testName), browsers: browsers.length ? browsers : undefined, platform: selectedOs }),
   });
-}
-
-// Run the test whose output-row contains the clicked ▷ button
-function runOutputRow(btn) {
-  const rowEl = btn.closest('.output-row');
-  const key = rowEl.dataset.key;
-  const e = testMap.get(key);
-  if (!e) return;
-  const cat = TEST_CATALOGUE.find(t => t.suite === e.suite && t.name === e.name);
-  runSingleTest(cat ? cat.file : '', e.suite, e.name);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
