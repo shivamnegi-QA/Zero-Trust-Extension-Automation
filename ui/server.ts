@@ -419,18 +419,23 @@ app.post('/api/run', (req, res) => {
 
   const args = ['playwright', 'test', '--reporter=list', '--workers=1'];
 
+  // --project=NAME, not --project NAME: with the space form Playwright treats the
+  // following argv entry (a spec path or grep) as another project name and aborts.
   activeBrowsers.forEach((b) => {
-    args.push('--project', BROWSER_TO_PROJECT[b]);
+    args.push(`--project=${BROWSER_TO_PROJECT[b]}`);
   });
 
   if (safeFiles.length > 0) {
     safeFiles.forEach((f) => args.push(path.join('tests', f)));
   }
   if (safeGrep) {
-    args.push('--grep', safeGrep);
+    args.push(`--grep=${safeGrep}`);
   }
 
-  // Use shell: false and pass args array to avoid shell injection
+  // Use shell: false and pass args array to avoid shell injection.
+  // detached on POSIX puts the run in its own process group so /api/stop can signal the
+  // whole tree: npx spawns npm exec → playwright → chromedriver → Chrome, and none of
+  // those descendants inherit a SIGTERM sent to npx alone.
   activeRun = spawn('npx', args, {
     cwd: ROOT,
     env: {
@@ -439,6 +444,7 @@ app.post('/api/run', (req, res) => {
       PW_TEST_DEBUG_ERRORS: '1',
     },
     shell: false,
+    detached: !IS_WINDOWS,
   });
 
   let stdoutBuf = '';
@@ -486,11 +492,28 @@ app.post('/api/stop', (_req, res) => {
   wasStopped = true;
   if (IS_WINDOWS) {
     spawnSync('taskkill', ['/PID', String(proc.pid), '/F', '/T'], { stdio: 'ignore', timeout: 5_000 });
-  } else {
-    proc.kill('SIGTERM');
+  } else if (proc.pid) {
+    // Negative pid signals the whole process group (see detached in /api/run), so
+    // chromedriver and the browser it launched die with the runner instead of being
+    // reparented to launchd. Escalate for anything that ignores SIGTERM.
+    const pgid = -proc.pid;
+    try { process.kill(pgid, 'SIGTERM'); } catch { /* group already gone */ }
+    setTimeout(() => {
+      try { process.kill(pgid, 'SIGKILL'); } catch { /* exited cleanly */ }
+    }, 5_000).unref();
   }
   // runStatus and broadcast are handled in the 'close' handler once the process actually exits
   res.json({ stopped: true });
+});
+
+// A detached run survives the server, so take its process group down on the way out.
+['SIGINT', 'SIGTERM'].forEach((sig) => {
+  process.on(sig, () => {
+    if (activeRun?.pid && !IS_WINDOWS) {
+      try { process.kill(-activeRun.pid, 'SIGKILL'); } catch { /* already gone */ }
+    }
+    process.exit(0);
+  });
 });
 
 const PORT = parseInt(process.env.PORT ?? '4321', 10);
