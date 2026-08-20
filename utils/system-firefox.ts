@@ -46,6 +46,7 @@ export class GdSession {
 
   async navigate(url: string): Promise<void> {
     await this.json('POST', `/session/${this.sessionId}/url`, { url });
+    console.log(`  [firefox] Navigated to ${url}`);
   }
 
   async currentUrl(): Promise<string> {
@@ -57,6 +58,7 @@ export class GdSession {
 
   async execute<T>(script: string, args: unknown[] = []): Promise<T> {
     const d = await this.json('POST', `/session/${this.sessionId}/execute/sync`, { script, args }) as { value: T };
+    console.log(`  [firefox] Executed script → ${JSON.stringify(d.value)?.slice(0, 200)}`);
     return d.value;
   }
 
@@ -72,7 +74,11 @@ export class GdSession {
       const d = await this.json('POST', `/session/${this.sessionId}/element`, { using: strategy, value: selector }) as {
         value: Record<string, string> | { error: string }
       };
-      if ('error' in d.value) return null;
+      if ('error' in d.value) {
+        console.log(`  [firefox] findElement(${strategy}, "${selector}") → not found`);
+        return null;
+      }
+      console.log(`  [firefox] findElement(${strategy}, "${selector}") → found`);
       return Object.values(d.value)[0];
     } catch { return null; }
   }
@@ -98,6 +104,7 @@ export class GdSession {
 
   async clickElement(elementId: string): Promise<void> {
     await this.json('POST', `/session/${this.sessionId}/element/${elementId}/click`, {});
+    console.log(`  [firefox] Clicked element "${elementId}"`);
   }
 
   // ── Page text ───────────────────────────────────────────────────────────────

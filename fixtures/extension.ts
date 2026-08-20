@@ -135,17 +135,20 @@ function makeChromeSession(context: BrowserContext, extensionId: string, _cdpEnd
       lastPopupPage = await context.newPage();
       await lastPopupPage.goto(popupUrl).catch(() => {});
       await lastPopupPage.waitForLoadState('networkidle').catch(() => {});
+      console.log(`  [chrome] Opened popup ${popupUrl} — body length ${body.length}`);
       return body;
     },
     async closePopup() {
       await closeExtensionPopup(context, extensionId).catch(() => {});
       if (lastPopupPage && !lastPopupPage.isClosed()) { await lastPopupPage.close().catch(() => {}); lastPopupPage = null; }
+      console.log('  [chrome] Closed popup');
     },
     async navigate(url) {
       if (!navPage || navPage.isClosed()) {
         navPage = await context.newPage();
       }
       await navPage.goto(url);
+      console.log(`  [chrome] Navigated to ${url}`);
     },
     async findElement(strategy, selector) {
       const pg = (lastPopupPage && !lastPopupPage.isClosed()) ? lastPopupPage
@@ -154,6 +157,7 @@ function makeChromeSession(context: BrowserContext, extensionId: string, _cdpEnd
       try {
         const loc = strategy === 'css selector' ? pg.locator(selector) : pg.locator(`xpath=${selector}`);
         const visible = await loc.first().isVisible({ timeout: 2_000 }).catch(() => false);
+        console.log(`  [chrome] findElement(${strategy}, "${selector}") → ${visible ? 'found' : 'not found'}`);
         return visible ? selector : null;
       } catch { return null; }
     },
@@ -162,23 +166,27 @@ function makeChromeSession(context: BrowserContext, extensionId: string, _cdpEnd
                : (navPage && !navPage.isClosed()) ? navPage : null;
       if (!pg) return;
       await pg.locator(id).first().click({ timeout: 5_000 });
+      console.log(`  [chrome] Clicked "${id}"`);
     },
     async execute<T>(script: string, args: unknown[] = []) {
       const pg = (lastPopupPage && !lastPopupPage.isClosed()) ? lastPopupPage
                : (navPage && !navPage.isClosed()) ? navPage : null;
       if (!pg) throw new Error('No page available');
-      return pg.evaluate(
+      const result = await pg.evaluate(
         ({ script: s, args: a }: { script: string; args: unknown[] }) =>
           // eslint-disable-next-line @typescript-eslint/no-implied-eval
           (new Function(s)).apply(null, a) as T,
         { script, args },
       );
+      console.log(`  [chrome] Executed script → ${JSON.stringify(result)?.slice(0, 200)}`);
+      return result;
     },
     async sendKeys(elementId: string, text: string) {
       const pg = (lastPopupPage && !lastPopupPage.isClosed()) ? lastPopupPage
                : (navPage && !navPage.isClosed()) ? navPage : null;
       if (!pg) return;
       await pg.locator(elementId).fill(text);
+      console.log(`  [chrome] Typed ${text.length} character(s) into "${elementId}"`);
     },
     async currentUrl() {
       return navPage?.url() ?? '';
@@ -364,7 +372,7 @@ export const test = base.extend<{}, ExtensionFixtures>({
         execute: <T>(script: string, args: unknown[] = []) => session.execute<T>(script, args),
         sendKeys: (id, text) => session
           .json('POST', `/session/${session.sessionId}/element/${id}/value`, { value: text.split(''), text })
-          .then(() => {}),
+          .then(() => { console.log(`  [firefox] Typed ${text.length} character(s) into "${id}"`); }),
         currentUrl: () => session.currentUrl(),
         screenshot: (p) => session.screenshot(p),
         poll: (fn, cond, opts) => session.poll(fn, cond, opts),

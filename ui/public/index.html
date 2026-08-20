@@ -962,7 +962,7 @@
     .detail-log-body {
       padding: 8px 14px 10px;
       font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.75;
-      max-height: 320px; overflow-y: auto; color: var(--muted-2);
+      max-height: 320px; overflow-y: auto; color: var(--text);
       white-space: pre-wrap; word-break: break-all;
     }
     .detail-log-body .ll-pass   { color: var(--done); }
@@ -970,8 +970,8 @@
     .detail-log-body .ll-warn   { color: var(--wip); }
     .detail-log-body .ll-info   { color: var(--accent); }
     .detail-log-body .ll-stderr { color: #fb923c; }
-    .detail-log-body .ll-dim    { color: var(--border-2); }
-    .detail-log-empty { color: var(--border-2); font-style: italic; font-size: 11px; padding: 6px 0; }
+    .detail-log-body .ll-dim    { color: var(--muted); }
+    .detail-log-empty { color: var(--muted); font-style: italic; font-size: 11px; padding: 6px 0; }
 
     /* ── Screenshot modal ────────────────────────────────────────────────────── */
     #screenshot-modal {
@@ -2055,10 +2055,14 @@ function setStatus(s) {
 // ─────────────────────────────────────────────────────────────────────────────
 function ingestLine(rawLine, tag) {
   rawLineCount++;
-  const clean = rawLine.replace(/\x1B\[[0-9;]*m/g, '').trim();
+  // classifyRaw's step/detail rules key off leading indentation (console.log output is
+  // conventionally 2-space indented) — classify on the untrimmed, ANSI-stripped line so
+  // that indentation survives, then trim only for the parsers/display below.
+  const stripped = rawLine.replace(/\x1B\[[0-9;]*m/g, '');
+  const clean = stripped.trim();
 
   // Classify and route to current test log group
-  const cls = classifyRaw(clean, tag);
+  const cls = classifyRaw(stripped, tag);
 
   // Detect test-start line from --reporter=list:
   //   "  [N/total] [project] › file:line:col › Suite Name › Test Name"
@@ -2396,10 +2400,10 @@ function classifyRaw(line, tag) {
 // Classify a step-row variant for step/fixture lines
 function stepVariant(line, cls) {
   if (cls === 'fixture') return 'step-fixture';
-  // console output heuristics
+  // console output heuristics — word-boundary so "password" doesn't match \bpass\b
   if (/error|fail|✗|✘/i.test(line))    return 'step-fail';
   if (/warn/i.test(line))               return 'step-warn';
-  if (/✓|√|pass|confirmed|success/i.test(line)) return 'step-pass';
+  if (/✓|√|\bpass(ed)?\b|confirmed|success/i.test(line)) return 'step-pass';
   return 'step-info';
 }
 

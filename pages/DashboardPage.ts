@@ -17,6 +17,7 @@ export class DashboardPage {
   async waitForReady(timeout = 20_000): Promise<void> {
     await this.page.waitForURL(/\/enterprise\/#\//, { timeout });
     await this.navLink.waitFor({ state: 'visible', timeout });
+    console.log(`  Dashboard shell ready at ${this.page.url()}`);
   }
 
   /** Returns true if the sidebar navigation is present (confirms authenticated shell) */
@@ -34,9 +35,12 @@ export class DashboardPage {
     ];
     for (const locator of candidates) {
       if (await locator.isVisible().catch(() => false)) {
-        return (await locator.innerText()).trim();
+        const text = (await locator.innerText()).trim();
+        console.log(`  Logged-in user indicator: "${text}"`);
+        return text;
       }
     }
+    console.log('  No logged-in user indicator matched any candidate locator');
     return '';
   }
 

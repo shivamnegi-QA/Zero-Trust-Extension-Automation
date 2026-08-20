@@ -91,10 +91,12 @@ export async function launchExtensionApp(appPath: string): Promise<void> {
   }
 
   clearQuarantine(appPath);
+  console.log(`  [safari] Launching ${appPath}`);
   cp.spawn('open', [appPath], { stdio: 'ignore', detached: true }).unref();
 
   const appeared = await waitUntil(() => isProcessRunning(APP_PROCESS_NAME), 15_000);
   if (!appeared) throw new Error(`${APP_PROCESS_NAME} did not launch within 15s`);
+  console.log(`  [safari] ${APP_PROCESS_NAME} process is running`);
 
   const hasWindow = await waitUntil(async () => {
     try {
@@ -103,6 +105,7 @@ export async function launchExtensionApp(appPath: string): Promise<void> {
     } catch { return false; }
   }, 10_000);
   if (!hasWindow) throw new Error(`${APP_PROCESS_NAME} launched but showed no window`);
+  console.log(`  [safari] ${APP_PROCESS_NAME} window is visible`);
 }
 
 /** Force-quits the extension app — used as cleanup if the click step fails partway. */
@@ -134,9 +137,11 @@ export async function clickOpenSafariPreferences(): Promise<void> {
     end tell
   `);
   if (clicked !== 'clicked') throw new Error('"Quit and Open Safari…" button not found in extension window');
+  console.log(`  [safari] Clicked "Quit and Open Safari Extensions Preferences…" in ${APP_PROCESS_NAME}`);
 
   const quit = await waitUntil(async () => !(await isProcessRunning(APP_PROCESS_NAME)), 10_000);
   if (!quit) throw new Error(`${APP_PROCESS_NAME} did not quit after clicking the preferences button`);
+  console.log(`  [safari] ${APP_PROCESS_NAME} quit — Safari should now be opening Extensions settings`);
 }
 
 /**
@@ -154,6 +159,7 @@ export async function verifyExtensionInSettings(): Promise<{ found: boolean; ena
   }, 8_000);
 
   if (!hasWindow) {
+    console.log('  [safari] Extensions window did not open automatically — falling back to Safari > Settings… menu');
     try {
       runAppleScript(`
         tell application "System Events"
@@ -173,6 +179,7 @@ export async function verifyExtensionInSettings(): Promise<{ found: boolean; ena
       } catch { return false; }
     }, 8_000);
   }
+  console.log(`  [safari] Extensions settings window ${hasWindow ? 'opened' : 'never appeared'}`);
   if (!hasWindow) return { found: false, enabled: false };
 
   await sleep(500);
@@ -200,9 +207,11 @@ export async function verifyExtensionInSettings(): Promise<{ found: boolean; ena
   `);
 
   let cbVal = readRow();
+  console.log(`  [safari] "${EXTENSION_DISPLAY_NAME}" row in Extensions settings: ${cbVal === 'not-found' ? 'not found' : cbVal === '1' ? 'enabled' : 'disabled'}`);
   if (cbVal === 'not-found') return { found: false, enabled: false };
 
   if (cbVal !== '1') {
+    console.log(`  [safari] Clicking the checkbox to enable "${EXTENSION_DISPLAY_NAME}"`);
     runAppleScript(`
       tell application "System Events"
         tell process "Safari"
@@ -323,12 +332,15 @@ export async function openExtensionPopup(): Promise<string> {
   for (let attempt = 0; attempt < 4 && preview === null; attempt++) {
     const clicked = runAppleScript(clickToolbarIcon);
     if (clicked !== 'clicked') throw new Error('Extension toolbar icon not found in Safari toolbar');
+    console.log(`  [safari] Clicked the "${EXTENSION_DISPLAY_NAME}" toolbar icon (attempt ${attempt + 1})`);
     await sleep(1_500);
     const result = runAppleScript(findPopover);
+    console.log(`  [safari] Popover check (attempt ${attempt + 1}): ${result === 'no-popover' ? 'not found' : 'found'}`);
     if (result !== 'no-popover') preview = result;
   }
   if (preview === null) throw new Error('Clicked the extension icon but no popover appeared');
 
+  console.log(`  [safari] Popover preview: ${preview.trim().slice(0, 150)}`);
   return preview.trim();
 }
 

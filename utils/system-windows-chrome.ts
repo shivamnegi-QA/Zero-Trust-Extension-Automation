@@ -300,7 +300,7 @@ export async function launchWindowsBrowserWithExtension(opts: WinLaunchOptions):
 
       (function poll() {
         const btn = chromeLoadBtn() ?? edgeLoadBtn();
-        if (btn) { btn.click(); cb('clicked'); return; }
+        if (btn) { btn.click(); cb(devModeToggled ? 'clicked-after-toggle' : 'clicked'); return; }
 
         if (!devModeToggled) {
           const sw = edgeDevSwitch();
@@ -315,7 +315,8 @@ export async function launchWindowsBrowserWithExtension(opts: WinLaunchOptions):
         setTimeout(poll, 400);
       })();
     `, [], 18_000);
-    if (typeof clickResult !== 'string' || clickResult !== 'clicked') throw new Error(`Load unpacked button not found (${JSON.stringify(clickResult)}) — developer mode may be blocked by policy`);
+    if (typeof clickResult !== 'string' || !clickResult.startsWith('clicked')) throw new Error(`Load unpacked button not found (${JSON.stringify(clickResult)}) — developer mode may be blocked by policy`);
+    if (isEdge) console.log(`${tag} Developer mode ${clickResult === 'clicked-after-toggle' ? 'toggled on' : 'was already on'}`);
     console.log(`${tag} Clicked "Load unpacked" — Windows file picker should open`);
 
     // Get browser PID by finding which process owns the remote debugging port.

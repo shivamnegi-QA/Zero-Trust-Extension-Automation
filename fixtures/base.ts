@@ -148,7 +148,9 @@ export async function openExtensionPopupBodyText(
 
   // Poll for popup target
   let popupTargetId: string | null = null;
+  let pollAttempts = 0;
   for (let i = 0; i < 40; i++) {
+    pollAttempts = i + 1;
     const { targetInfos } = await cdp.send('Target.getTargets');
     const t = targetInfos.find(t => t.url?.startsWith(popupUrl) && t.type === 'page');
     if (t) { popupTargetId = t.targetId; break; }
@@ -156,10 +158,12 @@ export async function openExtensionPopupBodyText(
   }
 
   if (!popupTargetId) {
+    console.log(`  [chrome] Popup CDP target for ${popupUrl} did not appear after ${pollAttempts} poll attempts`);
     await cdp.detach().catch(() => {});
     await anchorPage.close().catch(() => {});
     throw new Error('Popup CDP target did not appear after openPopup()');
   }
+  console.log(`  [chrome] Popup CDP target for ${popupUrl} found after ${pollAttempts} poll attempt(s)`);
 
   // Attach to the popup target with flatten:true — this gives us a CDP session
   // routed directly into the popup window's JS context (not a new tab).

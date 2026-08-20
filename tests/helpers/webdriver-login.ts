@@ -44,6 +44,7 @@ export async function webdriverLogin(
   );
   if (!emailInput) throw new Error('Email input not found');
   await session.sendKeys(emailInput, email);
+  console.log(`  Typed email "${email}"`);
 
   const submitBtn1 = await session.findElement('css selector', '[data-testid="button-submit"]');
   if (!submitBtn1) throw new Error('Submit button not found after email input');

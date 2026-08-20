@@ -88,11 +88,13 @@ test.describe.serial('Dashboard Login', () => {
     // Navigate to BASE_URL. If a session cookie is present the SPA will redirect
     // to /enterprise/ — wait up to 6s for that redirect before deciding to login.
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+    console.log(`  Navigated to ${BASE_URL}`);
 
     const alreadyLoggedIn = await page
       .waitForURL(/\/enterprise\//, { timeout: 6_000 })
       .then(() => true)
       .catch(() => false);
+    console.log(`  Already logged in: ${alreadyLoggedIn}`);
 
     if (!alreadyLoggedIn) {
       // Running in isolation or session expired — login first.
@@ -101,6 +103,7 @@ test.describe.serial('Dashboard Login', () => {
     }
 
     await page.reload({ waitUntil: 'domcontentloaded' });
+    console.log(`  Reloaded page — now at ${page.url()}`);
 
     await expect
       .poll(() => dashboard.isLoaded(), { timeout: 10_000, intervals: [500] })
